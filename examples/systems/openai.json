@@ -1,0 +1,1 @@
+{"type": "openai", "model_env": "TANGRAM_OPENAI_MODEL", "api_key_env": "OPENAI_API_KEY", "chunk_size": 25, "timeout_seconds": 60, "max_output_tokens": 2048, "use_prompt": true}

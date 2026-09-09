@@ -48,15 +48,20 @@ def rotation(yaw):
     return np.array([[c, -s], [s, c]])
 
 
-def goal(seed):
-    """Public square, with a seeded translation and rotation; no shape holdout claim."""
+def goal_transform(seed, target="square"):
+    """Independent goal random stream; larger figures keep clear of the source."""
     rng = np.random.default_rng(np.random.SeedSequence([seed, 1]))
-    # Target on the +y side, nearer the base than the packed source square.
-    center = np.array([0.32, 0.20]) + rng.uniform(-0.015, 0.015, 2)
+    center = np.array([0.32, 0.20 if target == "square" else 0.27]) + rng.uniform(-0.015, 0.015, 2)
     yaw = rng.uniform(-np.pi, np.pi)
-    r = rotation(yaw)
-    outline = (np.array([[0, 0], [1, 0], [1, 1], [0, 1]]) - 0.5) * SIDE
-    return outline @ r.T + center
+    return center, yaw
+
+
+def goal(seed, target="square"):
+    from shapes import canonical
+
+    outline, _, _ = canonical(target)
+    center, yaw = goal_transform(seed, target)
+    return outline @ rotation(yaw).T + center
 
 
 def square_solution(outline):
@@ -91,13 +96,36 @@ def polygons(poses):
 def score_batch(poses, velocities, outlines):
     """Score all worlds at once with NumPy/GEOS; inset slab footprints and face-up physical gates.
 
-    Input shapes: (worlds, 7, 7), (worlds, 7, 6), (worlds, 4, 2).
+    Input shapes: (worlds, 7, 7), (worlds, 7, 6), (worlds, vertices, 2).
     Output: one array per metric, each of shape (worlds,).
     """
+    poses, velocities, outlines = (
+        np.asarray(x, dtype=float) for x in (poses, velocities, outlines)
+    )
+    n = len(poses)
+    if (
+        poses.shape != (n, 7, 7)
+        or velocities.shape != (n, 7, 6)
+        or outlines.ndim != 3
+        or outlines.shape[0] != n
+        or outlines.shape[1] < 3
+        or outlines.shape[2] != 2
+        or n == 0
+        or not all(np.isfinite(x).all() for x in (poses, velocities, outlines))
+    ):
+        raise ValueError("Expected finite poses (N,7,7), velocities (N,7,6), goals (N,V,2)")
+    if not np.allclose(np.linalg.norm(poses[..., 3:], axis=-1), 1, atol=1e-6, rtol=0):
+        raise ValueError("Piece quaternions must have unit norm")
     footprints, targets = polygons(poses), shapely.polygons(outlines)
+    if not np.all(shapely.is_valid(targets) & (shapely.area(targets) > 0)):
+        raise ValueError("Goals must be valid polygons with positive area")
     union = shapely.union_all(footprints, axis=-1)
-    iou = shapely.area(shapely.intersection(union, targets)) / shapely.area(
-        shapely.union(union, targets)
+    intersection = shapely.area(shapely.intersection(union, targets))
+    iou = intersection / shapely.area(shapely.union(union, targets))
+    piece_area = shapely.area(footprints)
+    in_goal = shapely.area(shapely.intersection(footprints, targets[:, None]))
+    piece_coverage = np.divide(
+        in_goal, piece_area, out=np.zeros_like(in_goal), where=piece_area > 0
     )
     overlap = np.maximum(
         0, shapely.area(footprints).sum(axis=-1) - shapely.area(union)
@@ -110,6 +138,8 @@ def score_batch(poses, velocities, outlines):
     still &= np.all(np.linalg.norm(velocities[..., 3:], axis=-1) < 0.1, axis=-1)
     return {
         "iou": iou,
+        "coverage": intersection / shapely.area(targets),
+        "pieces_in_goal": (piece_coverage >= 0.95).sum(axis=-1),
         "overlap_fraction": overlap,
         "on_table": on_table,
         "flat": flat,

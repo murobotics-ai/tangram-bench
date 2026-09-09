@@ -9,6 +9,7 @@ import xml.etree.ElementTree as ET
 import mujoco
 import numpy as np
 
+from shapes import PROMPT, TARGETS
 from tangram import (
     CENTERS,
     COLORS,
@@ -191,10 +192,16 @@ class Env:
             self.wm = mjw.put_model(self.model)
             self.wd = mjw.make_data(self.model, nworld=num_envs, nconmax=256, njmax=1024)
 
-    def reset(self, seeds):
+    def reset(self, seeds, targets=None, prompt=PROMPT):
         if len(seeds) != self.num_envs or any(int(s) < 0 for s in seeds):
             raise ValueError("Provide one nonnegative seed per world")
-        self.outlines = [goal(int(s)) for s in seeds]
+        self.targets = list(targets) if targets is not None else ["square"] * self.num_envs
+        if len(self.targets) != self.num_envs or any(t not in TARGETS for t in self.targets):
+            raise ValueError("Provide one defined target per world")
+        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1000:
+            raise ValueError("Prompt must contain 1..1000 characters")
+        self.prompt = prompt
+        self.outlines = [goal(int(s), target) for s, target in zip(seeds, self.targets)]
         self.steps = 0
         for d, seed in zip(self.data, seeds):
             mujoco.mj_resetData(self.model, d)
@@ -249,13 +256,15 @@ class Env:
             for i, d in enumerate(self.data):
                 d.qpos[:], d.qvel[:] = qp[i], qv[i]
         observations = []
-        for d, outline in zip(self.data, self.outlines):
+        for d, outline, target in zip(self.data, self.outlines, self.targets):
             # Refresh tool/geometry poses without rerunning CPU contact dynamics.
             mujoco.mj_kinematics(self.model, d)
             mujoco.mj_comPos(self.model, d)
             observations.append(
                 {
                     "robot": self.robot,
+                    "prompt": self.prompt,
+                    "target": target,
                     "time": self.steps * DT * SUBSTEPS,
                     "qpos": d.qpos[: self.narm + 2].copy(),
                     "qvel": d.qvel[: self.narm + 2].copy(),
@@ -268,16 +277,28 @@ class Env:
             )
         return observations
 
-    def step(self, actions):
+    def validate_actions(self, actions):
+        """Validate one or more absolute joint commands without advancing physics."""
         actions = np.asarray(actions, dtype=float)
-        if actions.shape != (self.num_envs, self.narm + 1) or not np.isfinite(actions).all():
-            raise ValueError(f"Expected finite actions of shape {(self.num_envs, self.narm + 1)}")
+        if (
+            actions.ndim != 2
+            or actions.shape[1] != self.narm + 1
+            or len(actions) == 0
+            or not np.isfinite(actions).all()
+        ):
+            raise ValueError(f"Expected finite actions of shape (N, {self.narm + 1})")
         if np.any(actions[:, :-1] < self.limits[:-1, 0]) or np.any(
             actions[:, :-1] > self.limits[:-1, 1]
         ):
             raise ValueError("Arm action exceeds actuator limits")
         if np.any((actions[:, -1] < 0) | (actions[:, -1] > 1)):
             raise ValueError("Gripper opening must be in [0, 1]")
+        return actions.copy()
+
+    def step(self, actions):
+        actions = self.validate_actions(actions)
+        if len(actions) != self.num_envs:
+            raise ValueError(f"Expected one action per world ({self.num_envs})")
         controls = actions.copy()
         controls[:, -1] = self.limits[-1, 0] + actions[:, -1] * np.diff(self.limits[-1])[0]
         # Fixed 2 rad/s target slew limit, shared by all policies and backends.

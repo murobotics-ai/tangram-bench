@@ -71,6 +71,8 @@ def test_packed_square_layout_and_context_framing(robot):
     np.testing.assert_array_equal(a["pieces"], b["pieces"])
     assert set(a) == {
         "robot",
+        "prompt",
+        "target",
         "time",
         "qpos",
         "qvel",
@@ -83,10 +85,10 @@ def test_packed_square_layout_and_context_framing(robot):
 
 
 def test_undefined_silhouettes_are_not_selectable():
-    assert view.TARGETS == ("square",)
+    assert set(view.TARGETS) == {"square", "rectangle", "house", "cat"}
     with pytest.raises(ValueError, match="not defined"):
         view.target_outline("horse", 0)
-    assert "not defined" in view.panel_text("square", "context")
+    assert "exact state" in view.panel_text("square", "context")
 
 
 @pytest.mark.parametrize("size", [(1440, 960), (720, 600), (1920, 1080)])

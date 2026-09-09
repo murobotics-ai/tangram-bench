@@ -12,3 +12,4 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run pytest -q
       - run: uv run eval.py --backend cpu --episodes 1 --steps 30 --out runs/ci.json
+      - run: uv run -m tools.results verify runs/ci.json

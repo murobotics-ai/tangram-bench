@@ -4,12 +4,15 @@
 
 ## Implementation status
 
-The piece dimensions, inset and grasp knobs below are implemented in
-`square-packed-state-v3`, together with the seeded packed reset. Only the square
-target currently exists, at a separate location, so the shipped task is relocation.
-A varied silhouette library, pixel observations and manipulation baselines remain
-pending. Literature comparisons below are supplied research notes, not claims
-validated by the implementation tests.
+The shipped public pilot includes square, rectangle, house and cat silhouettes,
+with orientation-preserving solution certificates and split membership in
+`shapes.py`. Observations are exact state plus an optional prompt. Evaluation,
+checkpoint adapters, recorded replay and a local history viewer are implemented.
+`examples/house.py` demonstrates physical assembly on one selected Panda development
+scene with a 240-second horizon. A baseline validated across scenes and embodiments,
+pixel observations and a hosted private evaluation service are not implemented.
+Literature comparisons below are research
+notes, not claims established by implementation tests.
 
 ## What it is
 
@@ -86,11 +89,10 @@ planning and execution failures.
 
 ## Arguments against, stated plainly
 
-- **v3 does not yet test the reasoning claim.** `square-packed-state-v3` has
-  one silhouette, exact state, goal corners in the observation, and no required
-  flips. Moving a packed square to another pose is a pose-assignment-plus-control
-  task. The reasoning story only becomes true once silhouettes vary and
-  observations come from pixels.
+- **The current track does not yet test the reasoning claim.** `tangram-packed-state-v5` has
+  four public silhouettes, exact state, and no required flips. This small corpus
+  does not establish broad generalization; larger structural-family holdouts and
+  physical baselines are needed.
 - **Control may dominate, not reasoning.** MRChaos and the VLM tangram papers
   suggest the assignment step is learnable in 2D; the hard part with a
   parallel-jaw gripper is likely grasping and precisely placing thin flat
@@ -100,8 +102,8 @@ planning and execution failures.
   with seeded resets is easy to overfit and to solve by shortcut. Their
   diagnostics (pose randomization, ablated inputs, significance over seeds)
   should be part of any reported result.
-- **No baseline yet.** Without a reliable manipulation baseline, no claim about
-  difficulty is supported; see [the protocol](docs/protocol.md).
+- **No baseline across scenes yet.** The selected house demonstration does not
+  establish reliability across seeds or embodiments; see [the protocol](docs/protocol.md).
 
 ## Start state: the packed square
 
@@ -129,8 +131,7 @@ For:
 Against:
 
 - **A colocated square target would be trivial.** The current target is placed
-  separately, making relocation necessary. A verified silhouette library is still
-  required to test varied shape assembly.
+  separately, making relocation necessary. The current library adds three verified silhouettes for a small assembly pilot.
 - **Control could dominate without the handle.** Interior pieces (the small
   square, the parallelogram) have no free edge at the start. The grasp handle
   below is what makes a straight top grasp out of the packed square possible.
@@ -242,7 +243,7 @@ before the edge inset.
 
 ## Current scope
 
-The shipped protocol is [`square-packed-state-v3`](docs/protocol.md): seven inset
+The shipped protocol is [`tangram-packed-state-v5`](docs/protocol.md): seven inset
 pieces with rigid top knobs begin packed as a square at a random pose, away from
 the target location. The viewer shows three equal 4:3 panels: the goal silhouette,
 the top camera and the wrist camera. The two cameras are what a policy will see in
@@ -250,7 +251,7 @@ the pixel protocol; the goal panel is viewer-only and never an observation. The 
 also lies on the table as a visual silhouette, so the cameras do carry it. Both Panda
 and PiPER models include collidable knobs with mass and inertia. Today observations
 remain exact state. Lights, colours and camera poses are fixed by the benchmark and
-listed in the protocol's Rendering section, because they will define the pixel
+defined in `env.py`, because they will define the pixel
 observations later.
 
 Body origins and knobs use the **nominal tile centroid before inset**, at slab
@@ -263,14 +264,15 @@ flatness now explicitly requires the knob face up. Thresholds remain IoU ≥ 0.9
 overlap < 1%, and the final 0.5-second hold. Versions with different piece geometry
 or reset distributions are not comparable.
 
-Only square is implemented. Because source and target occupy different locations,
-this task is not solved at reset. No policy was run to validate this geometry update.
-The existing `examples/scripted.py` is an old controller attempt, not a baseline
-validated for knobs. Physical material parameters (700 kg/m³ and friction) remain
+Square, rectangle, house and cat are implemented. Because source and target occupy
+different locations, these tasks are not solved at reset. `examples/house.py` has
+passed a physical Panda house demonstration on development seed 100076 with an
+extended 12,000-step horizon. `examples/scripted.py` remains an old controller
+attempt. Physical material parameters (700 kg/m³ and friction) remain
 assumptions. Geometric fit is not proof of reachability or reliable extraction.
 
-Next: add target polygons with verified seven-piece solutions, test approach and
-extraction clearance on both robots, establish a manipulation baseline, then add
+Next: expand the verified silhouette corpus, test approach and extraction
+clearance on both robots, establish a baseline across scenes, then add
 pixel observations and real-world validation. Polygon holes and alternative
 packing variants are not implemented. Keep policy experiments under the fixed
 [protocol](docs/protocol.md); workflow instructions are in [README.md](README.md).

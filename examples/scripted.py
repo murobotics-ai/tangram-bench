@@ -44,6 +44,8 @@ class Policy:
         return self.data.qpos[: self.narm].copy()
 
     def act(self, obs):
+        if obs.get("target", "square") != "square":
+            raise ValueError("This legacy controller only supports the square target")
         if self.index >= 7:
             return np.r_[self.ik(obs, np.array([0.35, 0, 0.3]), 0), 1.0]
         i = self.order[self.index]
