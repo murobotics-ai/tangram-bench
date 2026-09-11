@@ -1,7 +1,7 @@
 """Verify saved trajectories or compare matched evaluations without running a policy.
 
-Usage: uv run -m tools.results verify runs/result.json
-       uv run -m tools.results compare runs/a.json runs/b.json
+Usage: uv run -m tools.results verify outputs/runs/result.json
+       uv run -m tools.results compare outputs/runs/a.json outputs/runs/b.json
 """
 
 import argparse
@@ -57,7 +57,7 @@ def verify(path):
                 or trace["status"].item() != row["status"]
                 or trace["target"].item() != row["target"]
                 or row["target"] != expected_targets[row["seed"]]
-                or trace["prompt"].item() != run["prompt"]
+                or trace["prompt"].item() != run["prompts"][row["target"]]
             ):
                 raise ValueError("Trajectory identity mismatch")
             steps = row["steps_executed"]

@@ -31,8 +31,8 @@ from benchmark import (
     score_trajectory,
     summarize,
 )
-from env import DT, SUBSTEPS, Env
-from shapes import PROMPT, SUITES, TARGETS, VERSION
+from env import CAMERAS, DT, IMAGE_SIZE, SUBSTEPS, Env
+from shapes import SUITES, TARGETS, VERSION, prompt
 from tools.prepare import REVISION
 
 
@@ -63,7 +63,7 @@ def run_batch(
     max_chunk,
     save_episode,
     targets=None,
-    prompt=PROMPT,
+    prompt=None,
     max_inference_calls=None,
 ):
     """Keep failed policies out of later inference; preserve every attempted episode.
@@ -72,7 +72,13 @@ def run_batch(
     its world holds the last valid command while unaffected worlds finish.
     """
     observations = env.reset(seeds, targets, prompt)
+    if env.pixels:
+        # Pixels are rendered on demand, only for the world and tick that asks the policy.
+        for j, obs in enumerate(observations):
+            obs["images"] = env.images(j)
     traces = [{key: [obs[key].copy()] for key in STATE_FIELDS} for obs in observations]
+    subtasks = [[] for _ in seeds]  # Optional language annotation a policy exposes per tick.
+    steps_done = [[] for _ in seeds]
     actions = [[] for _ in seeds]
     controls = [[] for _ in seeds]
     drivers = [None for _ in seeds]
@@ -103,6 +109,8 @@ def run_batch(
                     ):
                         inference = False
                         raise RuntimeError("Inference call budget exhausted")
+                    if inference and env.pixels and "images" not in observations[j]:
+                        observations[j]["images"] = env.images(j)
                     previous[j] = drivers[j].act(observations[j])
                 except Exception as exc:
                     errors[j], status[j] = error_record(exc), "policy_error"
@@ -118,6 +126,8 @@ def run_batch(
                         traces[j][key].append(obs[key].copy())
                     actions[j].append(previous[j].copy())
                     controls[j].append(env.previous[j].copy())
+                    subtasks[j].append(str(getattr(drivers[j].policy, "subtask", "")))
+                    steps_done[j].append(int(getattr(drivers[j].policy, "step", 0)))
     except (Exception, KeyboardInterrupt) as exc:
         fatal = exc
         for j in range(len(seeds)):
@@ -132,6 +142,11 @@ def run_batch(
             trace["actions"] = np.asarray(actions[j]).reshape(-1, env.narm + 1)
             trace["controls"] = np.asarray(controls[j]).reshape(-1, env.narm + 1)
             trace["time"] = np.arange(len(trace["pieces"])) * CONTROL_SECONDS
+            trace["subtask"] = np.asarray(subtasks[j], dtype=str)
+            trace["step"] = np.asarray(steps_done[j], dtype=np.int64)
+            plan = getattr(drivers[j].policy, "plan", []) if drivers[j] else []
+            trace["plan"] = np.asarray([str(line) for line in plan], dtype=str)
+            trace["prompt"] = env.prompts[j]
             row = {"seed": seed, "target": env.targets[j], "status": status[j], "error": errors[j]}
             row["policy_access"] = (
                 getattr(drivers[j].policy, "access", "state") if drivers[j] else "state"
@@ -163,15 +178,23 @@ def parser():
     source.add_argument("--system", type=Path, help="Adapter/checkpoint JSON configuration")
     p.add_argument("--robot", choices=["panda", "piper"], default="panda")
     p.add_argument("--backend", choices=["cpu", "warp"], default="cpu")
+    p.add_argument(
+        "--obs",
+        choices=["state", "pixels"],
+        default="state",
+        help="pixels adds observation['images'] (top and wrist, uint8) on every inference",
+    )
     p.add_argument("--episodes", type=int, default=4, help="Unique scenes; 4 is a smoke test")
     p.add_argument("--num-envs", type=int, default=4)
     p.add_argument("--steps", type=int, default=DEFAULT_STEPS)
     p.add_argument("--split", choices=SPLITS, default="dev")
     p.add_argument("--target", choices=(*TARGETS, "suite"), default="suite")
-    p.add_argument("--prompt", default=PROMPT)
-    p.add_argument("--max-inference-calls", type=int, default=3000)
     p.add_argument(
-        "--max-output-tokens", type=int, default=2048, help="Per-request ceiling for model adapters"
+        "--prompt", default=None, help="Override the per-figure task text for every episode"
+    )
+    p.add_argument("--max-inference-calls", type=int, default=DEFAULT_STEPS)
+    p.add_argument(
+        "--max-output-tokens", type=int, default=4096, help="Per-request ceiling for model adapters"
     )
     p.add_argument("--offset", type=int, default=0)
     p.add_argument("--max-chunk", type=int, default=1, help="Maximum open-loop action chunk length")
@@ -185,7 +208,7 @@ def parser():
         default=[],
         help="Hash a checkpoint or imported source; repeat for multiple files",
     )
-    p.add_argument("--out", type=Path, default=Path("runs/result.json"))
+    p.add_argument("--out", type=Path, default=Path("outputs/runs/result.json"))
     return p
 
 
@@ -233,7 +256,7 @@ def main(argv=None):
         metadata = {**metadata, "system": system}
         if system.get("chunk_size", 1) > args.max_chunk:
             p.error("System chunk_size exceeds --max-chunk")
-        if system.get("max_output_tokens", 2048) > args.max_output_tokens:
+        if system.get("max_output_tokens", 4096) > args.max_output_tokens:
             p.error("System max_output_tokens exceeds the evaluation limit")
     if args.policy_metadata:
         artifact_files.append(args.policy_metadata)
@@ -252,8 +275,8 @@ def main(argv=None):
     )
     git_status = git("status", "--porcelain")
     suite = SUITES[args.split] if args.target == "suite" else (args.target,)
-    if args.episodes % len(suite):
-        p.error("Episode count must be divisible by the number of suite figures")
+    # Episodes cycle through the suite's figures; use a multiple of len(suite)
+    # for equal counts per figure in reported runs.
     result = {
         "schema_version": SCHEMA_VERSION,
         "protocol": PROTOCOL,
@@ -261,6 +284,9 @@ def main(argv=None):
         "started_at": datetime.now(timezone.utc).isoformat(),
         "robot": args.robot,
         "backend": args.backend,
+        "observation": args.obs,
+        "cameras": list(CAMERAS) if args.obs == "pixels" else [],
+        "image_size": list(IMAGE_SIZE) if args.obs == "pixels" else None,
         "split": args.split,
         "steps": args.steps,
         "policy_hz": 1 / CONTROL_SECONDS,
@@ -269,6 +295,7 @@ def main(argv=None):
         "max_inference_calls": args.max_inference_calls,
         "max_output_tokens": args.max_output_tokens,
         "prompt": args.prompt,
+        "prompts": {t: args.prompt if args.prompt is not None else prompt(t) for t in suite},
         "dataset_version": VERSION,
         "targets": [suite[i % len(suite)] for i in range(args.episodes)],
         "requested_episodes": args.episodes,
@@ -289,8 +316,8 @@ def main(argv=None):
         "menagerie_revision": REVISION,
         "packages": {name: importlib.metadata.version(name) for name in packages},
         "episodes": [],
-        "note": "Public pilot corpus with privileged state; test figures are public, not secret. "
-        "Policy errors count as failures. No vision or sim-to-real claim.",
+        "note": "Public pilot corpus; the held-out figure is public, not secret. "
+        "Policy errors count as failures. No sim-to-real claim.",
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
     directory = args.out.with_suffix(".artifacts")
@@ -312,7 +339,6 @@ def main(argv=None):
                 schema_version=SCHEMA_VERSION,
                 status=row["status"],
                 target=row["target"],
-                prompt=args.prompt,
             )
         row["trajectory"] = str(Path(directory.name) / name)
         row["trajectory_sha256"] = digest(directory / name)
@@ -337,7 +363,9 @@ def main(argv=None):
         for start in range(0, args.episodes, args.num_envs):
             seeds = result["seeds"][start : start + args.num_envs]
             if env is None or env.num_envs != len(seeds):
-                env = Env(args.robot, args.backend, len(seeds))
+                if env is not None:
+                    env.close()
+                env = Env(args.robot, args.backend, len(seeds), pixels=args.obs == "pixels")
                 model = np.empty(mujoco.mj_sizeModel(env.model), dtype=np.uint8)
                 mujoco.mj_saveModel(env.model, buffer=model)
                 model_hash = hashlib.sha256(model.tobytes()).hexdigest()
@@ -364,6 +392,7 @@ def main(argv=None):
             path: digest(path) for path in artifacts
         }:
             raise RuntimeError("Source/checkpoint changed during evaluation; run is invalid")
+        env.close()
         result["status"] = "completed"
         result["policy_access"] = sorted({row["policy_access"] for row in result["episodes"]})
         result["summary"] = summarize(result["episodes"])

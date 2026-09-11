@@ -5,11 +5,15 @@ Warp batches physics on GPU; observation transfer and scoring remain on CPU in v
 """
 
 import xml.etree.ElementTree as ET
+from functools import lru_cache
 
 import mujoco
 import numpy as np
+import shapely
+from shapely.ops import triangulate
 
-from shapes import PROMPT, TARGETS
+from shapes import TARGETS
+from shapes import prompt as task_prompt
 from tangram import (
     CENTERS,
     COLORS,
@@ -26,6 +30,8 @@ from tools.prepare import ASSETS, ROBOTS
 
 DT = 0.002
 SUBSTEPS = 10  # 50 Hz policy, 500 Hz physics.
+CAMERAS = ("top", "wrist")  # Pixel observations; "context" stays an inspection view.
+IMAGE_SIZE = (240, 320)  # (height, width) for every observation camera.
 HOME = {"panda": [0, -0.45, 0, -2.2, 0, 1.8, 0.7854], "piper": [0, 1.0, -1.0, 0, 0.5, 0]}
 
 
@@ -161,11 +167,39 @@ def make_model(robot="panda"):
     return mujoco.MjModel.from_xml_string(ET.tostring(root, encoding="unicode"))
 
 
+def draw_goal(scene, outline):
+    """Exact concave silhouette triangles, visual only; never add collision geometry."""
+    for triangle in goal_triangles(tuple(map(tuple, outline))):
+        a, b, c = triangle
+        # The renderer's triangle is (0,0), (1,0), (0,1); this affine basis maps it exactly.
+        mat = np.column_stack((np.r_[b - a, 0], np.r_[c - a, 0], [0, 0, 1]))
+        mujoco.mjv_initGeom(
+            scene.geoms[scene.ngeom],
+            mujoco.mjtGeom.mjGEOM_TRIANGLE,
+            np.ones(3),
+            np.r_[a, 0.0002],
+            mat.ravel(),
+            np.array([0.12, 0.14, 0.16, 1]),
+        )
+        scene.ngeom += 1
+
+
+@lru_cache(maxsize=64)
+def goal_triangles(vertices):
+    polygon = shapely.Polygon(vertices)
+    triangles = [p for p in triangulate(polygon) if polygon.covers(p)]
+    if abs(sum(p.area for p in triangles) - polygon.area) > 1e-10:
+        raise ValueError("Silhouette triangulation does not cover the goal")
+    return [np.array(p.exterior.coords)[:3] for p in triangles]
+
+
 class Env:
-    def __init__(self, robot="panda", backend="cpu", num_envs=1):
+    def __init__(self, robot="panda", backend="cpu", num_envs=1, pixels=False):
         if robot not in ROBOTS or backend not in ("cpu", "warp") or num_envs < 1:
             raise ValueError("Invalid robot, backend, or num_envs")
         self.robot, self.backend, self.num_envs = robot, backend, num_envs
+        self.pixels = bool(pixels)
+        self.renderer = None  # Created on first use; rendering needs a GL context.
         self.model = make_model(robot)
         self.narm = len(HOME[robot])
         self.data = [mujoco.MjData(self.model) for _ in range(num_envs)]
@@ -192,15 +226,19 @@ class Env:
             self.wm = mjw.put_model(self.model)
             self.wd = mjw.make_data(self.model, nworld=num_envs, nconmax=256, njmax=1024)
 
-    def reset(self, seeds, targets=None, prompt=PROMPT):
+    def reset(self, seeds, targets=None, prompt=None):
+        """Seed each world; `prompt` overrides the per-figure task text for every world."""
         if len(seeds) != self.num_envs or any(int(s) < 0 for s in seeds):
             raise ValueError("Provide one nonnegative seed per world")
         self.targets = list(targets) if targets is not None else ["square"] * self.num_envs
         if len(self.targets) != self.num_envs or any(t not in TARGETS for t in self.targets):
             raise ValueError("Provide one defined target per world")
-        if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1000:
+        if prompt is not None and (
+            not isinstance(prompt, str) or not prompt.strip() or len(prompt) > 1000
+        ):
             raise ValueError("Prompt must contain 1..1000 characters")
-        self.prompt = prompt
+        self.prompts = [prompt if prompt is not None else task_prompt(t) for t in self.targets]
+        self.prompt = self.prompts[0]
         self.outlines = [goal(int(s), target) for s, target in zip(seeds, self.targets)]
         self.steps = 0
         for d, seed in zip(self.data, seeds):
@@ -256,14 +294,14 @@ class Env:
             for i, d in enumerate(self.data):
                 d.qpos[:], d.qvel[:] = qp[i], qv[i]
         observations = []
-        for d, outline, target in zip(self.data, self.outlines, self.targets):
+        for d, outline, target, text in zip(self.data, self.outlines, self.targets, self.prompts):
             # Refresh tool/geometry poses without rerunning CPU contact dynamics.
             mujoco.mj_kinematics(self.model, d)
             mujoco.mj_comPos(self.model, d)
             observations.append(
                 {
                     "robot": self.robot,
-                    "prompt": self.prompt,
+                    "prompt": text,
                     "target": target,
                     "time": self.steps * DT * SUBSTEPS,
                     "qpos": d.qpos[: self.narm + 2].copy(),
@@ -276,6 +314,31 @@ class Env:
                 }
             )
         return observations
+
+    def images(self, index=0):
+        """Render the observation cameras for one world, uint8 (H, W, 3) each.
+
+        Rendering is separate from `observe()` so it runs only when a policy is
+        queried or a frame is recorded, never on every physics step. Warp worlds
+        are synced to CPU `MjData` by `observe()`, so the same code serves both.
+        """
+        if not self.pixels:
+            raise RuntimeError("Construct Env(pixels=True) to render observations")
+        if self.renderer is None:
+            self.renderer = mujoco.Renderer(self.model, *IMAGE_SIZE)
+        d = self.data[index]
+        images = {}
+        for name in CAMERAS:
+            self.renderer.update_scene(d, camera=name)
+            # The target silhouette is painted on the table, so pixels carry the goal.
+            draw_goal(self.renderer.scene, self.outlines[index])
+            images[name] = self.renderer.render().copy()
+        return images
+
+    def close(self):
+        if self.renderer is not None:
+            self.renderer.close()
+            self.renderer = None
 
     def validate_actions(self, actions):
         """Validate one or more absolute joint commands without advancing physics."""

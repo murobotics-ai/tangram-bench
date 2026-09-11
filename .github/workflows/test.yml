@@ -1,15 +1,19 @@
 name: tests
 on: [push, pull_request]
+env:
+  MUJOCO_GL: egl
 jobs:
   cpu:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
+      - run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1-mesa-dri libglib2.0-0
       - run: uv sync --frozen --extra dev
       - run: uv run -m tools.prepare
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pytest -q
-      - run: uv run eval.py --backend cpu --episodes 1 --steps 30 --out runs/ci.json
-      - run: uv run -m tools.results verify runs/ci.json
+      - run: uv run eval.py --backend cpu --episodes 1 --steps 30 --out outputs/runs/ci.json
+      - run: uv run -m tools.results verify outputs/runs/ci.json
+

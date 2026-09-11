@@ -88,7 +88,7 @@ def test_undefined_silhouettes_are_not_selectable():
     assert set(view.TARGETS) == {"square", "rectangle", "house", "cat"}
     with pytest.raises(ValueError, match="not defined"):
         view.target_outline("horse", 0)
-    assert "exact state" in view.panel_text("square", "context")
+    assert "pixels" in view.panel_text("square", "context")
 
 
 @pytest.mark.parametrize("size", [(1440, 960), (720, 600), (1920, 1080)])

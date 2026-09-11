@@ -1,0 +1,370 @@
+{
+ "date": "2026-09-10",
+ "commit_of_sources": "8f560f4 (working tree, uncommitted controller changes)",
+ "policy": "examples/oracle.py",
+ "robot": "panda",
+ "split": "train",
+ "seeds": "0-9 per figure",
+ "steps": 12000,
+ "protocol": "tangram-packed-v6",
+ "figures": {
+  "square": {
+   "success_rate": 0.3,
+   "ci95": [
+    0.10779126740630099,
+    0.6032218525388546
+   ],
+   "episodes": [
+    {
+     "seed": 0,
+     "success": true,
+     "iou": 0.9766,
+     "first_success_seconds": 232.9,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 1,
+     "success": false,
+     "iou": 0.3698,
+     "first_success_seconds": null,
+     "pieces_in_goal": 2,
+     "error": "Piece 2 rests on a neighbour"
+    },
+    {
+     "seed": 2,
+     "success": false,
+     "iou": 0.4439,
+     "first_success_seconds": null,
+     "pieces_in_goal": 3,
+     "error": "Blocked while carrying: piece 2 after 3 retries"
+    },
+    {
+     "seed": 3,
+     "success": false,
+     "iou": 0.469,
+     "first_success_seconds": null,
+     "pieces_in_goal": 3,
+     "error": null
+    },
+    {
+     "seed": 4,
+     "success": false,
+     "iou": 0.6568,
+     "first_success_seconds": null,
+     "pieces_in_goal": 5,
+     "error": null
+    },
+    {
+     "seed": 5,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 192.22,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 6,
+     "success": false,
+     "iou": 0.5709,
+     "first_success_seconds": null,
+     "pieces_in_goal": 3,
+     "error": null
+    },
+    {
+     "seed": 7,
+     "success": false,
+     "iou": 0.4203,
+     "first_success_seconds": null,
+     "pieces_in_goal": 2,
+     "error": "Blocked at piece 2, phase approach"
+    },
+    {
+     "seed": 8,
+     "success": false,
+     "iou": 0.3996,
+     "first_success_seconds": null,
+     "pieces_in_goal": 2,
+     "error": "Blocked at piece 2, phase approach"
+    },
+    {
+     "seed": 9,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 232.74,
+     "pieces_in_goal": 7,
+     "error": null
+    }
+   ]
+  },
+  "rectangle": {
+   "success_rate": 0.5,
+   "ci95": [
+    0.236593090512564,
+    0.7634069094874361
+   ],
+   "episodes": [
+    {
+     "seed": 0,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 209.48000000000002,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 1,
+     "success": false,
+     "iou": 0.1081,
+     "first_success_seconds": null,
+     "pieces_in_goal": 0,
+     "error": "Piece lost before placement: piece 0 after 3 retries"
+    },
+    {
+     "seed": 2,
+     "success": false,
+     "iou": 0.6076,
+     "first_success_seconds": null,
+     "pieces_in_goal": 4,
+     "error": "Blocked at piece 3, phase approach"
+    },
+    {
+     "seed": 3,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 194.74,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 4,
+     "success": true,
+     "iou": 0.9786,
+     "first_success_seconds": 238.06,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 5,
+     "success": true,
+     "iou": 0.9776,
+     "first_success_seconds": 205.74,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 6,
+     "success": false,
+     "iou": 0.4288,
+     "first_success_seconds": null,
+     "pieces_in_goal": 2,
+     "error": "Piece lost before placement: piece 2 after 3 retries"
+    },
+    {
+     "seed": 7,
+     "success": false,
+     "iou": 0.5701,
+     "first_success_seconds": null,
+     "pieces_in_goal": 3,
+     "error": null
+    },
+    {
+     "seed": 8,
+     "success": false,
+     "iou": 0.3984,
+     "first_success_seconds": null,
+     "pieces_in_goal": 2,
+     "error": "Piece lost before placement: piece 2 after 3 retries"
+    },
+    {
+     "seed": 9,
+     "success": true,
+     "iou": 0.9646,
+     "first_success_seconds": 207.72,
+     "pieces_in_goal": 6,
+     "error": null
+    }
+   ]
+  },
+  "house": {
+   "success_rate": 0.3,
+   "ci95": [
+    0.10779126740630099,
+    0.6032218525388546
+   ],
+   "note": "silhouettes-v2 classic house; the v1 pentagon house scored 2/10",
+   "episodes": [
+    {
+     "seed": 0,
+     "success": false,
+     "iou": 0.9471,
+     "first_success_seconds": null,
+     "pieces_in_goal": 6,
+     "error": null
+    },
+    {
+     "seed": 1,
+     "success": false,
+     "iou": 0.627,
+     "first_success_seconds": null,
+     "pieces_in_goal": 3,
+     "error": null
+    },
+    {
+     "seed": 2,
+     "success": false,
+     "iou": 0.5918,
+     "first_success_seconds": null,
+     "pieces_in_goal": 4,
+     "error": null
+    },
+    {
+     "seed": 3,
+     "success": false,
+     "iou": 0.6555,
+     "first_success_seconds": null,
+     "pieces_in_goal": 5,
+     "error": null
+    },
+    {
+     "seed": 4,
+     "success": false,
+     "iou": 0.9429,
+     "first_success_seconds": null,
+     "pieces_in_goal": 6,
+     "error": null
+    },
+    {
+     "seed": 5,
+     "success": true,
+     "iou": 0.9772,
+     "first_success_seconds": 196.5,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 6,
+     "success": true,
+     "iou": 0.9533,
+     "first_success_seconds": 212.3,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 7,
+     "success": true,
+     "iou": 0.9778,
+     "first_success_seconds": 199.96,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 8,
+     "success": false,
+     "iou": 0.7485,
+     "first_success_seconds": null,
+     "pieces_in_goal": 5,
+     "error": null
+    },
+    {
+     "seed": 9,
+     "success": false,
+     "iou": 0.7592,
+     "first_success_seconds": null,
+     "pieces_in_goal": 6,
+     "error": null
+    }
+   ]
+  },
+  "cat": {
+   "success_rate": 0.4,
+   "ci95": [
+    0.16818032970623614,
+    0.6873262302663417
+   ],
+   "episodes": [
+    {
+     "seed": 0,
+     "success": false,
+     "iou": 0.6727,
+     "first_success_seconds": null,
+     "pieces_in_goal": 5,
+     "error": null
+    },
+    {
+     "seed": 1,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 199.1,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 2,
+     "success": false,
+     "iou": 0.6347,
+     "first_success_seconds": null,
+     "pieces_in_goal": 3,
+     "error": null
+    },
+    {
+     "seed": 3,
+     "success": false,
+     "iou": 0.4158,
+     "first_success_seconds": null,
+     "pieces_in_goal": 3,
+     "error": "Piece lost before placement: piece 2 after 3 retries"
+    },
+    {
+     "seed": 4,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 197.32,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 5,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 201.24,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 6,
+     "success": false,
+     "iou": 0.6573,
+     "first_success_seconds": null,
+     "pieces_in_goal": 4,
+     "error": null
+    },
+    {
+     "seed": 7,
+     "success": true,
+     "iou": 0.9783,
+     "first_success_seconds": 190.66,
+     "pieces_in_goal": 7,
+     "error": null
+    },
+    {
+     "seed": 8,
+     "success": false,
+     "iou": 0.6708,
+     "first_success_seconds": null,
+     "pieces_in_goal": 5,
+     "error": null
+    },
+    {
+     "seed": 9,
+     "success": false,
+     "iou": 0.7562,
+     "first_success_seconds": null,
+     "pieces_in_goal": 5,
+     "error": null
+    }
+   ]
+  }
+ },
+ "corpus": "silhouettes-v2"
+}

@@ -1,0 +1,1 @@
+{"type": "local", "module": "../lerobot_policy.py", "checkpoint": "../../outputs/train/smolvla/checkpoints/last/pretrained_model", "kwargs": {"fps": 10, "n_action_steps": 10}}

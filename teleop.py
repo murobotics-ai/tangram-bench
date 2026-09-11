@@ -41,6 +41,7 @@ class Teleop:
         self.ik_error = np.zeros(2)
         self.singular = False
         self.posture = obs["qpos"][: env.narm].copy()
+        self.last_action = np.r_[self.posture, self.grip]
 
     def move(self, translation, rotation, grip=0.0, slow=False):
         scale = CONTROL_DT * (0.2 if slow else 1.0)
@@ -105,7 +106,8 @@ class Teleop:
         if self.paused:
             return
         self.move(translation, rotation, grip, slow)
-        obs = self.env.step([self.action()])[0]
+        self.last_action = self.action()
+        obs = self.env.step([self.last_action])[0]
         self.error = float(np.linalg.norm(self.position - obs["tcp_pos"]))
         self.angle_error = float(
             np.linalg.norm(orientation_error(self.orientation, obs["tcp_mat"]))

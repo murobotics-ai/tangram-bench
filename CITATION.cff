@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use Tangram-Bench, please cite it as below."
+title: "Tangram-Bench: a silhouette-generalization benchmark for robot manipulation"
+type: software
+authors:
+  - name: "Mu Robotics"
+repository-code: "https://github.com/murobotics-ai/tangram-bench"
+license: MIT
+year: 2026

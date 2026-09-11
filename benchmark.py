@@ -12,18 +12,28 @@ import numpy as np
 
 from tangram import score_batch
 
-PROTOCOL = "tangram-packed-state-v5"
+PROTOCOL = "tangram-packed-v6"
 SCHEMA_VERSION = 1
 SPLITS = {"train": 0, "dev": 100000, "test": 200000}
 CONTROL_SECONDS = 0.02
 HOLD_STEPS = 25
-DEFAULT_STEPS = 3000
+DEFAULT_STEPS = 12000  # 240 simulated seconds; the reference controller needs about 200.
 STATE_FIELDS = ("qpos", "qvel", "tcp_pos", "tcp_mat", "pieces", "piece_velocities", "goal")
 
 
 def digest(path):
-    """Hash run artifacts without loading checkpoints or traces into memory."""
-    with Path(path).open("rb") as f:
+    """Hash run artifacts without loading checkpoints or traces into memory.
+
+    A directory (a checkpoint folder) hashes to the digest of its sorted
+    relative paths and file digests, so any changed or added file is detected.
+    """
+    path = Path(path)
+    if path.is_dir():
+        h = hashlib.sha256()
+        for file in sorted(p for p in path.rglob("*") if p.is_file()):
+            h.update(f"{file.relative_to(path).as_posix()}\0{digest(file)}\n".encode())
+        return h.hexdigest()
+    with path.open("rb") as f:
         return hashlib.file_digest(f, "sha256").hexdigest()
 
 
@@ -130,12 +140,13 @@ COMPARISON_FIELDS = (
     "protocol",
     "robot",
     "backend",
+    "observation",
     "split",
     "steps",
     "policy_hz",
     "num_envs",
     "max_chunk",
-    "prompt",
+    "prompts",
     "targets",
     "dataset_version",
     "max_inference_calls",

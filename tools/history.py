@@ -69,7 +69,7 @@ def collect(directory, stride=10):
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument("directory", type=Path)
-    p.add_argument("--out", type=Path, default=Path("runs/history.html"))
+    p.add_argument("--out", type=Path, default=Path("outputs/runs/history.html"))
     p.add_argument(
         "--stride", type=int, default=10, help="Display every Nth frame; scoring is unchanged"
     )

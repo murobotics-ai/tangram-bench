@@ -28,6 +28,16 @@ COLORS = [
     ".1 .35 .95 1",
     ".4 .75 .15 1",
 ]
+# Human names, colour first, matching COLORS; used in language annotations.
+NAMES = [
+    "orange large triangle",
+    "sky-blue large triangle",
+    "red medium triangle",
+    "yellow small triangle",
+    "brown small triangle",
+    "blue square",
+    "green parallelogram",
+]
 CENTERS = np.array([Polygon(p).centroid.coords[0] for p in TILES])
 # Keep the nominal tiling origins: inset the edges, never explode the packing.
 NOMINAL_VERTICES = [(np.array(p) - c) * SIDE for p, c in zip(TILES, CENTERS)]
