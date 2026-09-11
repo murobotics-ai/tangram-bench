@@ -350,3 +350,11 @@ average, 4.2 at most; longest still interval in a success 3.7 s. The failure,
 cat seed 8 (goal yaw 240°): the sky-blue large triangle slipped out of the
 pinch at 52 s, later placements landed 1–2 cm off, and five repairs did not
 fit in the time left; the arm held at home for the last 24 s.
+
+### Rounds
+
+Every collection launch writes into its own folder, `data/<figure>/<date-time>/`
+(`view.py --record` too), so a session of ten arms is one dated folder of ten
+episodes, and `--resume` grows the newest round with more seeds. Export and
+report read every round of a figure, newest copy of a seed first. No change
+to the episodes themselves.

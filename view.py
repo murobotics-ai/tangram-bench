@@ -1,7 +1,8 @@
 """Scene inspection, teleoperation and replay with goal, top and wrist panels.
 
 Static by default; --teleop enables manual physics, and --record DIR saves each
-teleoperated episode as a demonstration in the tools/collect.py format.
+teleoperated episode as a demonstration in the tools/collect.py format, in a
+round folder DIR/<YYYY-MM-DD-HH-MM-SS> named after the launch.
 --result replays an evaluation episode and --demo a recorded demonstration; both
 show the task prompt and the per-step language annotation as it changes.
 Never executes a policy.
@@ -222,6 +223,10 @@ def show_scene(env, outline, camera, target, teleop=False, seed=100000, record=N
     from teleop import CONTROL_DT, Teleop
 
     control = Teleop(env) if teleop else None
+    if record:
+        from tools.collect import round_name
+
+        record = record / round_name()  # One launch, one round folder, like tools.collect.
     session = Session(env, seed, target, outline, record) if record else None
     playback = hasattr(env, "seek")
     paused = False

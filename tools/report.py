@@ -3,7 +3,9 @@
 Usage: uv run -m tools.report data/square data/rectangle data/house data/cat
        uv run -m tools.report data/house --out results/2026-09-11-oracle-panda.json
 
-Reads the `index.jsonl` and episode files that tools/collect.py writes. Success
+Reads the `index.jsonl` and episode files that tools/collect.py writes, from a
+figure folder (every round in it, the newest copy of a seed winning) or one
+round. Success
 is the collector's: the benchmark's success test held for HOLD_STEPS during the
 episode (episodes then stop four seconds later, once the arm is home), which is not the same as
 success at the full horizon; eval.py measures that. The JSON records the
@@ -20,6 +22,7 @@ Definitions, per episode, from the 10 fps `tcp_pos` and `state` arrays:
 
 import argparse
 import json
+import re
 from pathlib import Path
 
 import mujoco
@@ -30,6 +33,7 @@ from benchmark import CONTROL_SECONDS, digest, wilson_interval
 from env import make_model
 
 SOURCES = ("tangram.py", "examples/oracle.py", "teleop.py", "env.py")
+ROUND = re.compile(r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}")
 CRITERION = {
     "iou": tangram.IOU_THRESHOLD,
     "overlap": tangram.OVERLAP_THRESHOLD,
@@ -74,19 +78,36 @@ def episode_metrics(path, model, data):
     }
 
 
+def index_rows(folder):
+    """Rows of every `index.jsonl` under a figure folder or one round, each with
+    its file resolved; for a seed recorded in several rounds the newest wins."""
+    newest = {}
+    for index in sorted(Path(folder).rglob("index.jsonl")):
+        for line in index.read_text().splitlines():
+            row = json.loads(line)
+            if row.get("file"):
+                row["file"] = str(index.parent / row["file"])
+                newest[Path(row["file"]).name] = row
+            else:
+                newest[("unsaved", row["seed"])] = row
+    saved = {row["seed"] for key, row in newest.items() if isinstance(key, str)}
+    rows = [row for key, row in newest.items() if isinstance(key, str) or row["seed"] not in saved]
+    return sorted(rows, key=lambda r: r["seed"])
+
+
 def summarize(folder, model, data):
-    rows = [json.loads(line) for line in (folder / "index.jsonl").read_text().splitlines()]
-    rows.sort(key=lambda r: r["seed"])
+    rows = index_rows(folder)
     episodes = []
     for row in rows:
         entry = {
             "seed": row["seed"],
+            "round": Path(row["file"]).parent.name if row.get("file") else None,
             "success": bool(row["success"]),
             "status": row["status"],
             "error": row["error"]["message"] if row.get("error") else None,
         }
         if row.get("file"):
-            entry.update(episode_metrics(folder / row["file"], model, data))
+            entry.update(episode_metrics(Path(row["file"]), model, data))
         episodes.append(entry)
     successes = [e for e in episodes if e["success"]]
     times = [e["first_success_seconds"] for e in successes if e.get("first_success_seconds")]
@@ -126,7 +147,11 @@ def report(folders, robot="panda"):
     figures = {}
     for folder in folders:
         folder = Path(folder)
-        figures[folder.name] = summarize(folder, model, data)
+        # One round of a figure is labelled by the figure, not by its date.
+        name = (
+            f"{folder.parent.name}/{folder.name}" if ROUND.fullmatch(folder.name) else folder.name
+        )
+        figures[name] = summarize(folder, model, data)
     root = Path(__file__).resolve().parents[1]
     return {
         "criterion": CRITERION,

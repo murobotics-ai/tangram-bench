@@ -3,6 +3,9 @@
 Usage: uv run -m tools.export data/square data/rectangle data/house --out data/lerobot/train
        uv run -m tools.export data/cat --out data/lerobot/test --repo-id tangram/test
 
+A folder may be a figure folder (every round inside it is read, the newest
+copy of a repeated seed wins) or one round.
+
 Features: observation.images.top and .wrist (video), observation.state (arm
 joints and two finger joints) and action (arm joint targets and gripper opening),
 all at the recording fps. The figure prompt is the LeRobot task string
@@ -26,9 +29,18 @@ import numpy as np
 from env import CAMERAS, HOME, IMAGE_SIZE
 
 
+def episode_files(folder):
+    """Episode files under a figure folder or one round of it, newest round first
+    for a repeated seed (round folders are named by date and time, so they sort)."""
+    newest = {}
+    for path in sorted(Path(folder).rglob("episode-*.npz")):
+        newest[path.name] = path
+    return sorted(newest.values())
+
+
 def episodes(folders, include_failures=False):
     for folder in folders:
-        for path in sorted(Path(folder).glob("episode-*.npz")):
+        for path in episode_files(folder):
             with np.load(path, allow_pickle=False) as data:
                 if not include_failures and not bool(data["success"]):
                     continue

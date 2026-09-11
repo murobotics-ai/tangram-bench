@@ -19,13 +19,25 @@ drifts by up to 0.05 rad over 300 ticks). Exact 50 Hz records come from eval.py.
 folder of episodes to a LeRobot dataset. Failed episodes are skipped unless
 `--keep-failures`; every attempt is listed in `index.jsonl`.
 
+Every launch is a round: its episodes go to `<out>/<YYYY-MM-DD-HH-MM-SS>/`
+(local time; `--round NAME` chooses the folder). `--resume` continues the
+newest round (or the one named by `--round`) with `--episodes` more seeds,
+starting after the last seed the round lists, the way `lerobot-record
+--resume` grows a dataset; `--offset` overrides the start and seeds whose file
+already exists are skipped, so a round can be topped up or retried
+indefinitely. `tools.export` and
+`tools.report` take the figure folder and read every round in it, the newest
+copy of a seed winning; `view.py --demo <round>/episode-SEED.npz` replays one.
+
 `--workers N` records N seeds at a time, one process, arm and table each, with
 headless EGL rendering; the episodes are identical to a sequential run because
 a seed fixes the scene, the goal and the demonstrator. `--watch` opens one 3D
 scene with every arm on its own table, like a multi-robot RL arena, with each
 arm's seed, progress and current subtask listed; `--watch grid` tiles one
 camera per arm instead (`--watch-camera context|top|wrist`). Physics stays in
-the workers, the window only draws, and closing it leaves the collection running.
+the workers, the window only draws, and closing it leaves the collection running;
+once every arm is done it stays open on the final state until closed, so chain
+unattended runs without `--watch`.
 """
 
 import argparse
@@ -33,6 +45,7 @@ import json
 import math
 import multiprocessing as mp
 import os
+import re
 import sys
 import textwrap
 import time
@@ -46,7 +59,24 @@ from benchmark import CONTROL_SECONDS, DEFAULT_STEPS, HOLD_STEPS, PROTOCOL, SPLI
 from env import CAMERAS, IMAGE_SIZE, Env, draw_goal, fleet_model
 from eval import load_policy
 from shapes import TARGETS
-from tangram import describe_layout, score
+from tangram import SPLIT_SIZE, describe_layout, score
+
+ROUND = re.compile(r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}")
+FINISHED = "All arms done, episodes saved. Esc or close the window to finish"
+
+
+def progress(row, done, total):
+    """One human line per finished episode, next to the JSON row."""
+    first = row.get("first_success_step", -1)
+    seconds = (first if first >= 0 else row["steps"]) / CONTROL_HZ
+    if row["success"]:
+        outcome = f"success at {seconds:.0f} s"
+    elif row["status"] == "completed":
+        outcome = f"no success in {seconds:.0f} s"
+    else:
+        outcome = f"{row['status']} at {seconds:.0f} s"
+    return f"[{done}/{total}] seed {row['seed']} {outcome}"
+
 
 FORMAT = "tangram-episodes"
 CONTROL_HZ = round(1 / CONTROL_SECONDS)
@@ -241,6 +271,27 @@ def episode_row(recorder, success, status, error, steps, target, seed, first_suc
     }
 
 
+def round_name(now=None):
+    """Folder name of one launch: the local date and time, hyphen separated."""
+    return (now or datetime.now()).strftime("%Y-%m-%d-%H-%M-%S")
+
+
+def latest_round(figure_folder):
+    """The newest dated round folder under a figure folder, or None."""
+    rounds = sorted(
+        p for p in Path(figure_folder).glob("*") if p.is_dir() and ROUND.fullmatch(p.name)
+    )
+    return rounds[-1] if rounds else None
+
+
+def recorded_seeds(round_folder):
+    """Seeds listed in a round's index, attempted or saved."""
+    index = Path(round_folder) / "index.jsonl"
+    if not index.exists():
+        return set()
+    return {json.loads(line)["seed"] for line in index.read_text().splitlines() if line.strip()}
+
+
 def append_index(out, row):
     row["recorded_at"] = datetime.now(timezone.utc).isoformat()
     with (out / "index.jsonl").open("a") as f:
@@ -360,6 +411,7 @@ class Fleet:
         import glfw
 
         self.glfw, self.states, self.steps = glfw, states, steps
+        self.finished = False
         self.status = [
             {"seed": None, "tick": 0, "label": "", "step": 0, "plan": 0, "done": None}
             for _ in states
@@ -423,7 +475,7 @@ class Fleet:
     def update(self, message):
         state = self.status[message["worker"]]
         if "done" in message:
-            state["done"] = message.get("error") or "done"
+            state["done"] = message.get("error") or f"done, {message['done']} episodes"
         elif "saving" in message:
             state["label"], state["step"] = "writing the episode file", 0
         elif "seed" in message:
@@ -487,7 +539,9 @@ class Fleet:
             mujoco.mjtFont.mjFONT_NORMAL,
             mujoco.mjtGridPos.mjGRID_BOTTOMLEFT,
             viewport,
-            "Drag: orbit | Right-drag: pan | Scroll: zoom | Esc: close window (collection continues)",
+            FINISHED
+            if self.finished
+            else "Drag: orbit | Right-drag: pan | Scroll: zoom | Esc: close window (collection continues)",
             "",
             self.context,
         )
@@ -506,6 +560,7 @@ class Wall:
         import glfw
 
         self.glfw, self.frames, self.steps = glfw, frames, steps
+        self.finished = False
         self.status = [
             {"seed": None, "tick": 0, "label": "", "step": 0, "plan": 0, "done": None}
             for _ in frames
@@ -552,7 +607,7 @@ class Wall:
     def update(self, message):
         state = self.status[message["worker"]]
         if "done" in message:
-            state["done"] = message.get("error") or "done"
+            state["done"] = message.get("error") or f"done, {message['done']} episodes"
         elif "saving" in message:
             state["label"], state["step"] = "writing the episode file", 0
         elif "seed" in message:
@@ -603,6 +658,15 @@ class Wall:
                     "",
                     self.context,
                 )
+        if self.finished:
+            mujoco.mjr_overlay(
+                mujoco.mjtFont.mjFONT_NORMAL,
+                mujoco.mjtGridPos.mjGRID_BOTTOMRIGHT,
+                mujoco.MjrRect(0, 0, width, height),
+                FINISHED,
+                "",
+                self.context,
+            )
         glfw.swap_buffers(self.window)
         glfw.poll_events()
 
@@ -665,6 +729,8 @@ def collect_parallel(seeds, args, out, watch):
                 if "row" in message:
                     append_index(out, message["row"])
                     recorded[message["worker"]].add(message["row"]["seed"])
+                    done = sum(len(r) for r in recorded.values())
+                    print(progress(message["row"], done, len(seeds)), flush=True)
                 if "done" in message:
                     finished += 1
                     reported.add(message["worker"])
@@ -696,6 +762,14 @@ def collect_parallel(seeds, args, out, watch):
         for process in processes:
             process.join()
         if wall is not None:
+            # Leave the final state on screen; the collection itself is over.
+            wall.finished = True
+            print(FINISHED, flush=True)
+            try:
+                while wall.open():
+                    wall.draw()
+            except KeyboardInterrupt:  # Everything is saved; Ctrl-C here is just "close".
+                pass
             wall.close()
         for error in errors:
             print(error, flush=True)
@@ -718,11 +792,24 @@ def main(argv=None):
     p.add_argument("--robot", choices=["panda", "piper"], default="panda")
     p.add_argument("--policy", type=Path, default=Path("examples/oracle.py"))
     p.add_argument("--split", choices=SPLITS, default="train")
-    p.add_argument("--offset", type=int, default=0)
+    p.add_argument("--offset", type=int, default=None, help="First seed of the split to record")
     p.add_argument("--fps", type=int, default=10, help="Frame rate; must divide 50")
     p.add_argument("--steps", type=int, default=DEFAULT_STEPS, help="Horizon in control ticks")
     p.add_argument("--prompt", default=None, help="Override the per-figure task text")
-    p.add_argument("--out", type=Path, help="Episode folder; default data/<target>")
+    p.add_argument("--out", type=Path, help="Figure folder; default data/<target>")
+    p.add_argument(
+        "--round",
+        help="Subfolder of --out for this launch; default the local date and time, "
+        "YYYY-MM-DD-HH-MM-SS. Name an existing round to resume it (recorded seeds are skipped). "
+        "Dated names sort in time order, which is how export and report pick the newest copy "
+        "of a seed; a custom name sorts by its letters",
+    )
+    p.add_argument(
+        "--resume",
+        action="store_true",
+        help="Continue the newest round of --out (or the one named by --round) with --episodes "
+        "more seeds, starting after the last seed it lists; --offset overrides the start",
+    )
     p.add_argument("--keep-failures", action="store_true")
     p.add_argument(
         "--full-horizon", action="store_true", help="Do not stop early after a held success"
@@ -748,19 +835,30 @@ def main(argv=None):
         help="Camera shown by --watch grid; context is the third-person view no policy sees",
     )
     args = p.parse_args(argv)
-    if min(args.episodes, args.fps, args.steps, args.workers) < 1 or args.offset < 0:
+    if min(args.episodes, args.fps, args.steps, args.workers) < 1 or (args.offset or 0) < 0:
         p.error("episodes, fps, steps and workers must be positive; offset nonnegative")
     if CONTROL_HZ % args.fps:
         p.error(f"fps must divide the {CONTROL_HZ} Hz control rate")
-    out = args.out or Path("data") / args.target
+    figure = args.out or Path("data") / args.target
+    if args.resume:
+        out = figure / args.round if args.round else latest_round(figure)
+        if out is None or not out.is_dir():
+            p.error(f"nothing to resume in {figure}")
+    else:
+        out = figure / (args.round or round_name())
     out.mkdir(parents=True, exist_ok=True)
+    base = SPLITS[args.split]
+    done = {seed for seed in recorded_seeds(out) if base <= seed < base + SPLIT_SIZE}
+    offset = args.offset
+    if offset is None:  # Resuming: the next seeds after the ones the round already lists.
+        offset = max(done) + 1 - base if args.resume and done else 0
+    print(json.dumps({"round": str(out), "recorded": len(done), "first_seed": base + offset}))
     args.policy = args.policy.resolve()
-    seeds = []
-    for seed in range(
-        SPLITS[args.split] + args.offset, SPLITS[args.split] + args.offset + args.episodes
-    ):
+    seeds, skipped = [], 0
+    for seed in range(base + offset, base + offset + args.episodes):
         if (out / f"episode-{seed}.npz").exists():
             print(json.dumps({"seed": seed, "skipped": "exists"}), flush=True)
+            skipped += 1
         else:
             seeds.append(seed)
     started = time.perf_counter()
@@ -771,10 +869,19 @@ def main(argv=None):
         kept, failed = collect_parallel(seeds, args, out, args.watch)
     else:
         env = Env(args.robot, pixels=True)
-        kept = record_seeds(env, load_policy(args.policy), seeds, args, out)
+        done = []
+
+        def on_row(row):
+            append_index(out, row)
+            done.append(row["seed"])
+            print(progress(row, len(done), len(seeds)), flush=True)
+
+        kept = record_seeds(env, load_policy(args.policy), seeds, args, out, on_row=on_row)
         env.close()
     print(
-        f"kept {kept}/{args.episodes} episodes in {out} ({time.perf_counter() - started:.0f} s)",
+        f"kept {kept}/{len(seeds)} episodes in {out} ({time.perf_counter() - started:.0f} s"
+        + (f"; {skipped} already recorded" if skipped else "")
+        + ")",
         flush=True,
     )
     return 1 if failed else 0

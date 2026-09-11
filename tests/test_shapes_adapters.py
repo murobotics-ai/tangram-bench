@@ -300,9 +300,11 @@ def test_scene_override_is_applied_and_recorded(tmp_path):
             "45",
             "--out",
             str(tmp_path),
+            "--round",
+            "r",
         ]
     )
-    row = json.loads((tmp_path / "index.jsonl").read_text().splitlines()[0])
+    row = json.loads((tmp_path / "r" / "index.jsonl").read_text().splitlines()[0])
     assert row["goal_yaw_deg"] == 45.0 and "source_yaw_deg" in row and "goal_center_mm" in row
 
 

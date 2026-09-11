@@ -2,6 +2,8 @@
 
 import importlib.util
 import json
+import re
+from datetime import datetime
 
 import numpy as np
 import pytest
@@ -84,9 +86,11 @@ def test_collect_records_frames_at_fps_with_interval_end_actions(tmp_path):
             "--keep-failures",
             "--out",
             str(tmp_path),
+            "--round",
+            "r",
         ]
     )
-    with np.load(tmp_path / "episode-0.npz", allow_pickle=False) as data:
+    with np.load(tmp_path / "r" / "episode-0.npz", allow_pickle=False) as data:
         assert data["images_top"].shape == (3, *IMAGE_SIZE, 3)
         assert data["state"].shape == (3, 9) and data["action"].shape == (3, 8)
         np.testing.assert_allclose(data["time"], [0.0, 0.1, 0.2], atol=1e-6)
@@ -96,11 +100,11 @@ def test_collect_records_frames_at_fps_with_interval_end_actions(tmp_path):
         assert data["step"].tolist() == [0, 0, 0] and data["plan"].shape == (0,)
     from replay import Demo
 
-    demo = Demo(tmp_path / "episode-0.npz")
+    demo = Demo(tmp_path / "r" / "episode-0.npz")
     demo.seek(2)
     assert demo.steps == 2 and demo.frame_seconds == 0.1 and demo.label() == ""
     assert demo.text().startswith("DEMO | seed 0 | not solved")
-    rows = [json.loads(line) for line in (tmp_path / "index.jsonl").read_text().splitlines()]
+    rows = [json.loads(line) for line in (tmp_path / "r" / "index.jsonl").read_text().splitlines()]
     assert rows == [{**rows[0], "seed": 0, "frames": 3, "success": False}]
     with pytest.raises(SystemExit):
         collect(["--target", "square", "--fps", "7", "--out", str(tmp_path)])
@@ -227,16 +231,17 @@ def test_collect_workers_split_seeds_and_match_the_sequential_run(tmp_path, monk
     monkeypatch.setenv("MUJOCO_GL", "egl")  # Worker processes render headless.
     common = ["--target", "house", "--episodes", "3", "--steps", "10", "--fps", "10"]
     common += ["--policy", "policy.py", "--keep-failures"]
-    collect([*common, "--workers", "3", "--out", str(tmp_path / "par")])
-    collect([*common, "--out", str(tmp_path / "seq")])
+    collect([*common, "--workers", "3", "--out", str(tmp_path / "par"), "--round", "r"])
+    collect([*common, "--out", str(tmp_path / "seq"), "--round", "r"])
     rows = [
-        json.loads(line) for line in (tmp_path / "par" / "index.jsonl").read_text().splitlines()
+        json.loads(line)
+        for line in (tmp_path / "par" / "r" / "index.jsonl").read_text().splitlines()
     ]
     assert sorted(r["seed"] for r in rows) == [0, 1, 2] and all(r["frames"] == 2 for r in rows)
     for seed in range(3):
         with (
-            np.load(tmp_path / "par" / f"episode-{seed}.npz") as a,
-            np.load(tmp_path / "seq" / f"episode-{seed}.npz") as b,
+            np.load(tmp_path / "par" / "r" / f"episode-{seed}.npz") as a,
+            np.load(tmp_path / "seq" / "r" / f"episode-{seed}.npz") as b,
         ):
             for key in ("state", "action", "pieces", "time", "goal", "subtask", "prompt"):
                 assert np.array_equal(a[key], b[key]), key
@@ -364,7 +369,7 @@ def test_teleop_session_finish_saves_and_dead_worker_is_reported(tmp_path, monke
             str(tmp_path / "dead"),
         ]
     )
-    assert code == 1 and not list((tmp_path / "dead").glob("*.npz"))
+    assert code == 1 and not list((tmp_path / "dead").rglob("*.npz"))
 
 
 def test_report_summarizes_a_collection_with_criterion_and_source_digests(tmp_path):
@@ -395,3 +400,51 @@ def test_report_summarizes_a_collection_with_criterion_and_source_digests(tmp_pa
         "teleop.py",
     }
     assert json.loads((tmp_path / "summary.json").read_text())["figures"]["square"]["episodes"] == 2
+
+
+def test_each_launch_is_a_dated_round_and_tools_read_every_round(tmp_path, capsys):
+    from tools.collect import round_name
+    from tools.export import episode_files
+    from tools.report import index_rows
+
+    common = ["--target", "square", "--steps", "10", "--policy", "policy.py", "--keep-failures"]
+    out = tmp_path / "square"
+    collect([*common, "--episodes", "1", "--out", str(out)])
+    rounds = [p.name for p in out.iterdir()]
+    assert len(rounds) == 1 and re.fullmatch(r"\d{4}-\d{2}-\d{2}-\d{2}-\d{2}-\d{2}", rounds[0])
+    assert rounds[0] == round_name(datetime.strptime(rounds[0], "%Y-%m-%d-%H-%M-%S"))
+    assert json.loads(capsys.readouterr().out.splitlines()[0]) == {
+        "round": str(out / rounds[0]),
+        "recorded": 0,
+        "first_seed": 0,
+    }
+    # A later round of seeds 0-1 (two episodes) and the first round's seed 0:
+    # the figure folder yields one file per seed, the newest for seed 0.
+    collect([*common, "--episodes", "2", "--out", str(out), "--round", "9999-01-01-00-00-00"])
+    files = episode_files(out)
+    assert [p.name for p in files] == ["episode-0.npz", "episode-1.npz"]
+    assert files[0].parent.name == "9999-01-01-00-00-00"
+    rows = index_rows(out)
+    assert [r["seed"] for r in rows] == [0, 1] and "9999-01-01-00-00-00" in rows[0]["file"]
+    assert [r["seed"] for r in index_rows(out / rounds[0])] == [0]
+    from tools.report import report
+
+    summary = report([out / rounds[0]])
+    assert list(summary["figures"]) == [f"square/{rounds[0]}"]
+    assert summary["figures"][f"square/{rounds[0]}"]["episodes_detail"][0]["round"] == rounds[0]
+    # Naming a round again skips the seeds whose file exists.
+    collect([*common, "--episodes", "2", "--out", str(out), "--round", "9999-01-01-00-00-00"])
+    assert "skipped" in capsys.readouterr().out and len(episode_files(out)) == 2
+    # --resume grows the newest round with more seeds, after the ones it lists.
+    collect([*common, "--episodes", "2", "--out", str(out), "--resume"])
+    first = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert first == {"round": str(out / "9999-01-01-00-00-00"), "recorded": 2, "first_seed": 2}
+    assert [p.name for p in episode_files(out / "9999-01-01-00-00-00")] == [
+        f"episode-{i}.npz" for i in range(4)
+    ]
+    assert [r["seed"] for r in index_rows(out)] == [0, 1, 2, 3]
+    # --offset overrides the start; --resume with no round is an error.
+    collect([*common, "--episodes", "1", "--out", str(out), "--resume", "--offset", "7"])
+    assert (out / "9999-01-01-00-00-00" / "episode-7.npz").exists()
+    with pytest.raises(SystemExit):
+        collect([*common, "--episodes", "1", "--out", str(tmp_path / "empty"), "--resume"])

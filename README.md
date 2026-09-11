@@ -19,7 +19,7 @@ question and measures it exactly: **can a policy rebuild a tangram silhouette it
 was never trained on?** A Franka Panda starts with the seven pieces packed as a
 square, sees the target silhouette painted on the table, and has to assemble it.
 Success is a global constraint over all seven pieces, scored by exact geometry.
-Everything runs in simulation on one laptop with an 8 GB GPU, in about 4,800 lines
+Everything runs in simulation on one laptop with an 8 GB GPU, in about 4,900 lines
 of plain Python: record demonstrations, train a policy, evaluate it on seen and
 unseen shapes, and compare results by seed. The current headline is the
 reference controller at **39 of 40 assemblies**; the first learned baseline is
@@ -111,7 +111,8 @@ Everything generated lands in three git-ignored folders, so the source tree stay
 the source tree:
 
 ```text
-data/<figure>/             demonstrations, one npz per episode     tools.collect, view.py --record
+data/<figure>/<round>/     demonstrations, one npz per episode, one round folder per
+                           launch named by its date and time      tools.collect, view.py --record
 data/lerobot/train/        exported LeRobot dataset                tools.export
 checkpoints/               pretrained weights from the Hub         tools.train, first run
 outputs/train/<name>/      fine-tuning runs; checkpoints/last/pretrained_model is what eval loads
@@ -126,14 +127,24 @@ policy (default: the reference controller below) and writes one compressed npz
 per episode: top and wrist images, `qpos` as state, the commanded action, piece
 poses, goal, the figure prompt and the per-frame `subtask` annotation the
 demonstrator exposes, at `--fps` frames per second (default 10). Replay one with
-`uv run view.py --demo data/house/episode-3.npz` and watch the annotation change. A frame's
+`uv run view.py --demo data/house/2026-09-11-15-39-29/episode-3.npz` and watch the
+annotation change. A frame's
 action is the last command of its 50/fps-tick interval; a policy that predicts one
 action per frame and holds it for the interval follows the demonstration to
 within about 0.05 rad (the demonstrator may change its command inside the
 interval), which is an imitation target, not an exact replay.
 Episodes stop four seconds after a held success, once the arm has returned
 home. Failed attempts are listed in
-`index.jsonl` and skipped unless `--keep-failures`.
+`index.jsonl` and skipped unless `--keep-failures`. Every launch is a round:
+its episodes land in `data/<figure>/<YYYY-MM-DD-HH-MM-SS>/` (local time;
+`--round NAME` picks the folder), so a session of ten arms is ten episode
+files in one dated folder, each replayable on its own. `--resume` grows the
+newest round with `--episodes` more seeds, the way `lerobot-record --resume`
+grows a dataset: it starts after the last seed the round lists, `--offset`
+overrides the start, and seeds whose file already exists are skipped, so the
+same round can be topped up as many times as wanted. `tools.export` and
+`tools.report` take the figure folder and read every round in it, the newest
+copy of a repeated seed winning; a single round works too.
 
 A full-horizon episode takes about a minute of wall time on one core, so
 `--workers 10` runs ten arms on ten tables at once, one process each with
@@ -148,6 +159,23 @@ with the mouse. Physics stays in the worker processes, the window only draws
 what they publish. `--watch grid` tiles one camera per arm instead
 (`--watch-camera context|top|wrist`). Closing the window does not stop the
 collection.
+
+Ten arms in one hall, live, for the four figures (about 5 minutes per figure,
+40 episodes each):
+
+```bash
+uv run -m tools.collect --target square    --episodes 40 --workers 10 --watch --out data/square
+uv run -m tools.collect --target rectangle --episodes 40 --workers 10 --watch --out data/rectangle
+uv run -m tools.collect --target house     --episodes 40 --workers 10 --watch --out data/house
+uv run -m tools.collect --target cat       --episodes 40 --workers 10 --watch --out data/cat
+uv run -m tools.report data/square data/rectangle data/house data/cat   # success, smoothness, stillness
+uv run -m tools.collect --target house --episodes 40 --workers 10 --watch --resume   # 40 more, same round
+```
+
+When every arm is done the window stays open on the final state until you
+close it (Esc); for unattended runs chained one after another, drop `--watch`.
+A house episode of 200 s of simulation takes about 80 s of wall time per arm,
+and workers beyond the number of episodes are not started.
 
 Teleoperation records the same format. The keyboard stands in for a SpaceMouse:
 **W/S A/D Q/E** translate, **Z/X T/G C/V** rotate, **R/F** open and close the
@@ -308,7 +336,7 @@ eval.py                 seeded runner, failure accounting, result artifacts (416
 adapters.py             local checkpoints, HTTP, OpenAI and Anthropic policies
 policy.py               the policy interface, 19 lines, holds position
 teleop.py               keyboard TCP targets through damped IK (151)
-view.py                 viewer, teleoperation, recording, replay (383)
+view.py                 viewer, teleoperation, recording, replay (388)
 replay.py               episode reconstruction (120)
 tools/prepare.py        robot assets at a pinned revision
 tools/collect.py        record demonstrations for one silhouette

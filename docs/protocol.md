@@ -236,7 +236,10 @@ Malformed scoring evidence raises an error. Privileged oracle controllers declar
 
 `uv run -m tools.collect --target NAME --episodes N` records seeded episodes of
 one figure with any policy (default: the reference controller) as
-`data/NAME/episode-SEED.npz`: top/wrist images, `qpos` as state, the commanded
+`data/NAME/<round>/episode-SEED.npz`, one round folder per launch named by its
+local date and time (`YYYY-MM-DD-HH-MM-SS`; `--round` names one, `--resume`
+grows the newest with more seeds):
+top/wrist images, `qpos` as state, the commanded
 action, piece poses, goal and identity, at `--fps` frames per second (default 10;
 must divide 50). A frame's action is the last command of its 50/fps-tick
 interval; a policy that emits one action per frame and holds it for the
@@ -302,7 +305,7 @@ seed. A 10,000-resample scene bootstrap (seed 0) reports B − A with wins/losse
 A degenerate interval on constant outcomes does not establish equivalence.
 
 `view.py --result result.json --episode 0` reconstructs the recorded state using
-its saved model; `view.py --demo data/house/episode-3.npz` replays a recorded
+its saved model; `view.py --demo data/house/<round>/episode-3.npz` replays a recorded
 demonstration at its frame rate. Space pauses, arrows seek one second, Home/End
 jump to endpoints. Neither reruns physics or the policy. The prompt and the
 current annotation stay above the scene.

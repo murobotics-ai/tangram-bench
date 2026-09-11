@@ -9,6 +9,7 @@ uv sync --frozen --extra dev --extra lerobot
 uv run -m tools.prepare
 
 # 1. Demonstrations: 60 seeds per training figure, ten arms at a time; nearly all succeed.
+#    Each launch lands in data/<figure>/<date-time>/; export reads every round of a figure.
 for figure in square rectangle house; do
   uv run -m tools.collect --target "$figure" --episodes 60 --workers 10 --out "data/$figure"
 done
