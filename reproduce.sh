@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The whole benchmark, end to end, on one laptop with an 8 GB GPU.
-# Wall time: about 2 h of demonstrations, 2-4 h of fine-tuning, 30 min of evaluation.
+# Wall time: about 30 min of demonstrations with 10 workers, 2-4 h of fine-tuning, 30 min of evaluation.
 # Run it detached and keep the log:  screen -L -Logfile reproduce.log -S tangram bash reproduce.sh
 set -euo pipefail
 export MUJOCO_GL=${MUJOCO_GL:-egl}
@@ -8,9 +8,9 @@ export MUJOCO_GL=${MUJOCO_GL:-egl}
 uv sync --frozen --extra dev --extra lerobot
 uv run -m tools.prepare
 
-# 1. Demonstrations: 60 seeds per training figure, about a third succeed.
+# 1. Demonstrations: 60 seeds per training figure, ten arms at a time; nearly all succeed.
 for figure in square rectangle house; do
-  uv run -m tools.collect --target "$figure" --episodes 60 --out "data/$figure"
+  uv run -m tools.collect --target "$figure" --episodes 60 --workers 10 --out "data/$figure"
 done
 uv run -m tools.export data/square data/rectangle data/house --out data/lerobot/train
 

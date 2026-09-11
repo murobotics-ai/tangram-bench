@@ -7,7 +7,7 @@ System file, paths relative to the JSON:
 
 Evaluate with pixels and a chunk budget of n_action_steps * 50 / fps:
   uv run eval.py --system examples/systems/lerobot.json --obs pixels --max-chunk 50 \\
-      --steps 12000 --max-inference-calls 12000 --out outputs/runs/smolvla-dev.json
+      --steps 15000 --max-inference-calls 15000 --out outputs/runs/smolvla-dev.json
 
 Observations map to the dataset written by tools/export.py: top and wrist
 images, `qpos` as observation.state, the prompt as the task. The policy

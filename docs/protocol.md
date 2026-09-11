@@ -1,9 +1,9 @@
-# tangram-packed-v6
+# tangram-packed
 
 Public pilot with four silhouettes, two simulated embodiments and two observation
-contracts (state or pixels). v6 replaces v5: three training figures and one
-held-out figure, pixel observations, a 12,000-step horizon and a demonstration
-format. Do not pool results across protocols. It does not claim robust
+contracts (state or pixels): three training figures and one held-out figure,
+pixel observations, a 15,000-step horizon and a demonstration format. Every
+result records the protocol name; do not pool results across protocols. It does not claim robust
 manipulation, secret-test generalization or sim-to-real.
 
 ## Tasks and splits
@@ -13,15 +13,15 @@ x ∈ [0.28, 0.36], y ∈ [−0.30, −0.24] metres, with uniform yaw in [−π,
 The original piece scale, 0.5 mm edge inset and 2 × 2 × 4 cm grasp knobs are fixed.
 Slabs are 5 mm thick; the nominal square side is 0.20√2 m. All pieces stay face up.
 
-`shapes.py` defines `silhouettes-v2`: square, rectangle, house and cat. The house
+`shapes.py` defines the corpus: square, rectangle, house and cat. The house
 is the classic tangram house (body, overhanging roof, chimney), mirrored so the
 parallelogram needs no flip. Coordinates are in 10 cm units with `sqrt(2)`
 diagonals; each certificate lists per piece an eighth-turn rotation and the
 position of its first vertex, verified for coverage, area, nonoverlap and no
 reflection. The nominal contours may be concave. Inset pieces have a geometric
 IoU ceiling of about 0.9788. Certificates are evaluator/reference assets, not
-policy observations. `uv run -m shapes` checks the corpus. v2 replaces the v1
-pentagon house; house results from v1 are not comparable.
+policy observations. `uv run -m shapes` checks the corpus. An earlier
+pentagon house was replaced by the classic one; its results are not comparable.
 
 The goal has an independent seeded translation/yaw. Its center is
 (0.32, 0.20) m for square and (0.32, 0.27) m for other figures, with ±0.015 m jitter
@@ -38,14 +38,52 @@ selects the seed range. `--target NAME` runs one diagnostic figure and is
 recorded explicitly. The held-out figure is publicly inspectable. One held-out
 animal is not broad shape-family generalization.
 
+## Scene design
+
+Nothing in a scene is drawn at random. A seed indexes a documented grid
+(`tangram.layout`), so the coverage of a dataset can be stated exactly and
+the dev split can ask for rotations never seen in training:
+
+- goal silhouette yaw: 12 values on a 30° grid, seed n takes n mod 12;
+  the dev split adds 15°, half a step, so its rotations lie between the
+  training ones and never equal one; the test split (cat) uses the 30° grid;
+- goal centre: (0.35, 0.28) m for the square and (0.35, 0.31) m for the other
+  figures, plus one of a 3×3 grid of offsets, −15, 0, +15 mm in x and y,
+  index (5n) mod 9;
+- packed square yaw: 8 values on a 45° grid, index (3n) mod 8;
+- packed square centre: (0.36, −0.30) m plus a 3×3 grid of −30, 0, +30 mm,
+  index (7n + 2) mod 9.
+
+Workspace: with these centres every piece centre, at the source and at the
+goal, lies between 0.28 m and 0.66 m from the robot base in every designed
+scene (`tangram.WORKSPACE`, checked by a test over the train and dev grids).
+Closer than 0.28 m the elbow folds against its stop and the forearm meets the
+shoulder column, which is where the reference controller used to fail.
+
+The strides are coprime to the grid sizes, so 60 consecutive seeds visit every
+value of every grid. Each recorded episode and evaluation row stores the scene
+in degrees and millimetres (`goal_yaw_deg`, `goal_center_mm`,
+`source_yaw_deg`, `source_center_mm`). `tools.collect --goal-yaw` and
+`--source-yaw` force a value for every seed, recorded the same way, for
+targeted datasets. Scenes recorded before this design (2026-09-11) used
+uniform random yaws and offsets and are not comparable.
+
 ## Physics and horizon
 
 Panda and PiPER use the pinned Menagerie models, with existing gripper gains,
 actuator limits and contact settings in `env.py`. Both CPU and Warp begin with
-100 CPU settling steps. Physics is 500 Hz; commands execute at 50 Hz.
+100 CPU settling steps. Physics is 500 Hz; commands execute at 50 Hz. Contacts
+use elliptic cones at MuJoCo's default `impratio`: a pinched slab creeps 4–13 mm
+during a 13 s carry, and `impratio` 10 halves that but stiffens every contact
+and cost the reference controller 3 of 40 assemblies (2026-09-11), so the
+default stays. Physics settings are part of the task.
 
-Default horizon: 12,000 actions / 240 simulated seconds; the reference controller
-needs about 200 seconds. The full horizon runs even after transient success. A fresh policy is constructed per episode with its seed.
+Default horizon: 15,000 actions / 300 simulated seconds. The reference
+controller needs about 200 s for seven placements at its safe carry speed
+(0.06 m/s; at 0.07 and 0.08 m/s the slab slips out of the pinch, measured on 40
+seeds each), and one recovery costs about 25 s; 240 s left room for none, so
+the horizon measured the clock rather than the assembly. Results recorded with
+the 240 s horizon (before 2026-09-11) are not comparable. The full horizon runs even after transient success. A fresh policy is constructed per episode with its seed.
 Source/goal sampling and seeds are fixed before execution. Policies must seed
 local RNGs; shared globals can make batching affect behavior.
 
@@ -142,7 +180,7 @@ included in transcripts. Rate limits and server errors are retried up to
 and malformed JSON are policy errors. Authenticated provider availability depends
 on the user's account; automated adapter tests use mocked responses.
 
-`--max-inference-calls` defaults to the horizon (12,000) per episode. Exhaustion is a failed
+`--max-inference-calls` defaults to the horizon (15,000) per episode. Exhaustion is a failed
 attempt. `--max-output-tokens` caps provider output per request (default 4,096);
 an adapter cannot exceed it. HTTP/provider calls have a configured timeout of at
 most 300 seconds. In-process policies have no watchdog. Simulator time waits for
@@ -156,10 +194,27 @@ Project the actual inset slab polygons using full body quaternions. For union U
 and goal G, IoU = area(U ∩ G) / area(U ∪ G). Overlap is
 (sum of footprint areas − area(U)) / area(G). A timestep passes only if:
 
-- IoU ≥ 0.95 and overlap < 0.01;
-- every body origin is within 2 mm of half-thickness above the table;
-- every local z axis is within 5° of upward vertical;
+- IoU ≥ 0.87 and overlap ≤ 0.06;
+- every piece's footprint is at least 85% inside the goal (the IoU alone is
+  dominated by the large pieces);
+- every body origin is within 4 mm of half-thickness above the table;
+- every local z axis is within 8° of upward vertical;
 - every piece moves below 0.01 m/s linearly and 0.1 rad/s angularly.
+
+The thresholds encode a tolerance of about 5 mm per piece. Calibration on
+certificate layouts of the four figures with every piece displaced 5 mm in a
+random direction and turned up to 3°: IoU median 0.915, overlap median 2.3%,
+least-covered piece 0.875 inside, and 1 failure in 10,000 samples (an IoU just
+under 0.87); at 10 mm on every piece the IoU median is 0.85 and most samples
+fail. The test constrains how the figure is assembled more than where it sits:
+the whole assembly rigidly shifted 10 mm keeps an IoU of 0.88–0.92, and
+whether it passes depends on the per-piece coverage gate, i.e. on which piece
+hangs over the silhouette's edge at that yaw. A rigid offset of that size is
+not a reasoning error, so no centroid gate is added. A
+slab resting on a neighbour's 5 mm edge sits 2–3 mm high and tilts about 2°, so
+it passes. Constants live in `tangram.py`; results scored before 2026-09-11
+used IoU ≥ 0.95, overlap < 0.01, 2 mm and 5°, about 1 mm per piece, and are
+not comparable.
 
 Success requires the final 25 consecutive post-action timesteps to pass. Reset
 never contributes. Gripper-empty completion is not required. First sustained
@@ -184,24 +239,38 @@ one figure with any policy (default: the reference controller) as
 `data/NAME/episode-SEED.npz`: top/wrist images, `qpos` as state, the commanded
 action, piece poses, goal and identity, at `--fps` frames per second (default 10;
 must divide 50). A frame's action is the last command of its 50/fps-tick
-interval, so a policy that emits one action per frame and holds it for the
-interval reproduces the demonstration. Episodes stop one second after a held
+interval; a policy that emits one action per frame and holds it for the
+interval follows the demonstration approximately (about 0.05 rad of drift over
+300 ticks when replayed), because the demonstrator may change its command inside
+the interval and the slew limit depends on the sequence. Exact 50 Hz records with
+velocities are the evaluation traces. Episodes stop four seconds after a held
 success unless `--full-horizon`. Failed attempts are listed in `index.jsonl`
-and skipped unless `--keep-failures`. `view.py --teleop --record DIR` saves
+and skipped unless `--keep-failures`. `--workers N` records N seeds at a time
+in separate processes with EGL rendering; a seed fixes the scene, goal and
+demonstrator, so the episodes match a sequential run (states and actions
+exactly, pixels up to one unit of rasterization noise). `--watch` draws every
+worker's arm and table in one display-only 3D scene (`env.fleet_model`);
+`--watch grid` tiles one camera per worker instead. `view.py --teleop --record DIR` saves
 teleoperated episodes in the same format. `uv run -m tools.export FOLDERS --out
 DIR` converts folders to one LeRobot v3 dataset (`observation.images.top`,
 `observation.images.wrist`, `observation.state`, `action`, task = prompt) with an
-`episodes.jsonl` sidecar. `uv run -m tools.train --policy smolvla` wraps
+`episodes.jsonl` sidecar. Each episode also stores `first_success_step`, the
+control step at which the success test first held for 25 steps (-1 if never);
+the collector's success flag means exactly that, and is not success at the
+horizon, which only `eval.py` measures. `uv run -m tools.report FOLDERS`
+summarizes folders (success, stillness, peak speed and acceleration from the
+velocity vector) and records the success thresholds and source digests.
+`uv run -m tools.train --policy smolvla` wraps
 `lerobot-train` with the repository paths: pretrained weights download to
 `checkpoints/` (the Hub cache, `HF_HUB_CACHE`) and the run is written to
 `outputs/train/NAME/`. `examples/lerobot_policy.py` runs a LeRobot checkpoint
 as a pixel policy, repeating each predicted action 50/fps ticks. Evaluation
 results default to `outputs/runs/`; `data/`, `checkpoints/` and `outputs/` are git-ignored, while
-`results/` holds the versioned summaries.
+`results/` holds the committed summaries.
 
 ## Artifacts, verification and history
 
-`result.json` has a versioned schema, UTC dates, exact seeds/figures/prompt/budgets,
+`result.json` has a fixed schema (`schema_version`), UTC dates, exact seeds/figures/prompt/budgets,
 robot/backend, model hash, package versions, policy/checkpoint/configuration hashes,
 source hashes, metadata, status, summary and episode records. `--policy-artifact`
 adds files to the hash manifest; `--policy-metadata` adds provenance. Declared

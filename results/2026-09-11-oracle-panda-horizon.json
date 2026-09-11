@@ -1,0 +1,783 @@
+{
+ "date": "2026-09-11",
+ "tool": "eval.py --policy examples/oracle.py --policy-artifact teleop.py --split train --episodes 10 (15,000 steps, state observations, designed scenes inside the 0.28-0.66 m workspace)",
+ "success_definition": "the success test holds over the final 25 control steps of the 300 s horizon",
+ "figures": {
+  "square": {
+   "success_at_horizon": "10/10",
+   "ci95": [
+    0.7224672001371107,
+    1.0
+   ],
+   "ever_sustained": 10,
+   "median_first_success_seconds": 209.09,
+   "episodes": [
+    {
+     "seed": 0,
+     "success": true,
+     "iou": 0.9699,
+     "first_success_seconds": 208.88,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 0.0,
+     "goal_center_mm": [
+      335.0,
+      265.0
+     ],
+     "source_yaw_deg": 0.0,
+     "source_center_mm": [
+      330.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 1,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 211.54,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 30.0,
+     "goal_center_mm": [
+      350.0,
+      295.0
+     ],
+     "source_yaw_deg": 135.0,
+     "source_center_mm": [
+      330.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 2,
+     "success": true,
+     "iou": 0.9785,
+     "first_success_seconds": 192.92000000000002,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 60.0,
+     "goal_center_mm": [
+      335.0,
+      280.0
+     ],
+     "source_yaw_deg": 270.0,
+     "source_center_mm": [
+      390.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 3,
+     "success": true,
+     "iou": 0.9764,
+     "first_success_seconds": 186.44,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 90.0,
+     "goal_center_mm": [
+      365.0,
+      265.0
+     ],
+     "source_yaw_deg": 45.0,
+     "source_center_mm": [
+      360.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 4,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 212.58,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 120.0,
+     "goal_center_mm": [
+      335.0,
+      295.0
+     ],
+     "source_yaw_deg": 180.0,
+     "source_center_mm": [
+      360.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 5,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 216.08,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 150.0,
+     "goal_center_mm": [
+      365.0,
+      280.0
+     ],
+     "source_yaw_deg": 315.0,
+     "source_center_mm": [
+      330.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 6,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 187.64000000000001,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 180.0,
+     "goal_center_mm": [
+      350.0,
+      265.0
+     ],
+     "source_yaw_deg": 90.0,
+     "source_center_mm": [
+      390.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 7,
+     "success": true,
+     "iou": 0.97,
+     "first_success_seconds": 206.66,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 210.0,
+     "goal_center_mm": [
+      365.0,
+      295.0
+     ],
+     "source_yaw_deg": 225.0,
+     "source_center_mm": [
+      390.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 8,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 209.3,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 240.0,
+     "goal_center_mm": [
+      350.0,
+      280.0
+     ],
+     "source_yaw_deg": 0.0,
+     "source_center_mm": [
+      360.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 9,
+     "success": true,
+     "iou": 0.9787,
+     "first_success_seconds": 214.42000000000002,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 270.0,
+     "goal_center_mm": [
+      335.0,
+      265.0
+     ],
+     "source_yaw_deg": 135.0,
+     "source_center_mm": [
+      330.0,
+      -270.0
+     ]
+    }
+   ],
+   "protocol": "tangram-packed",
+   "model_sha256": "6b6f13abfc724314e0f65b55db93e5437c3accceb4b5509e030f36ff748da97e"
+  },
+  "rectangle": {
+   "success_at_horizon": "10/10",
+   "ci95": [
+    0.7224672001371107,
+    1.0
+   ],
+   "ever_sustained": 10,
+   "median_first_success_seconds": 204.91000000000003,
+   "episodes": [
+    {
+     "seed": 0,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 199.58,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 0.0,
+     "goal_center_mm": [
+      335.0,
+      295.0
+     ],
+     "source_yaw_deg": 0.0,
+     "source_center_mm": [
+      330.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 1,
+     "success": true,
+     "iou": 0.949,
+     "first_success_seconds": 211.0,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 30.0,
+     "goal_center_mm": [
+      350.0,
+      325.0
+     ],
+     "source_yaw_deg": 135.0,
+     "source_center_mm": [
+      330.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 2,
+     "success": true,
+     "iou": 0.9763,
+     "first_success_seconds": 210.5,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 60.0,
+     "goal_center_mm": [
+      335.0,
+      310.0
+     ],
+     "source_yaw_deg": 270.0,
+     "source_center_mm": [
+      390.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 3,
+     "success": true,
+     "iou": 0.9782,
+     "first_success_seconds": 192.08,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 90.0,
+     "goal_center_mm": [
+      365.0,
+      295.0
+     ],
+     "source_yaw_deg": 45.0,
+     "source_center_mm": [
+      360.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 4,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 210.54,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 120.0,
+     "goal_center_mm": [
+      335.0,
+      325.0
+     ],
+     "source_yaw_deg": 180.0,
+     "source_center_mm": [
+      360.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 5,
+     "success": true,
+     "iou": 0.9779,
+     "first_success_seconds": 212.5,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 150.0,
+     "goal_center_mm": [
+      365.0,
+      310.0
+     ],
+     "source_yaw_deg": 315.0,
+     "source_center_mm": [
+      330.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 6,
+     "success": true,
+     "iou": 0.9787,
+     "first_success_seconds": 188.28,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 180.0,
+     "goal_center_mm": [
+      350.0,
+      295.0
+     ],
+     "source_yaw_deg": 90.0,
+     "source_center_mm": [
+      390.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 7,
+     "success": true,
+     "iou": 0.9411,
+     "first_success_seconds": 206.70000000000002,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 210.0,
+     "goal_center_mm": [
+      365.0,
+      325.0
+     ],
+     "source_yaw_deg": 225.0,
+     "source_center_mm": [
+      390.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 8,
+     "success": true,
+     "iou": 0.9767,
+     "first_success_seconds": 203.12,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 240.0,
+     "goal_center_mm": [
+      350.0,
+      310.0
+     ],
+     "source_yaw_deg": 0.0,
+     "source_center_mm": [
+      360.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 9,
+     "success": true,
+     "iou": 0.9613,
+     "first_success_seconds": 191.72,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 270.0,
+     "goal_center_mm": [
+      335.0,
+      295.0
+     ],
+     "source_yaw_deg": 135.0,
+     "source_center_mm": [
+      330.0,
+      -270.0
+     ]
+    }
+   ],
+   "protocol": "tangram-packed",
+   "model_sha256": "6b6f13abfc724314e0f65b55db93e5437c3accceb4b5509e030f36ff748da97e"
+  },
+  "house": {
+   "success_at_horizon": "10/10",
+   "ci95": [
+    0.7224672001371107,
+    1.0
+   ],
+   "ever_sustained": 10,
+   "median_first_success_seconds": 204.15,
+   "episodes": [
+    {
+     "seed": 0,
+     "success": true,
+     "iou": 0.9431,
+     "first_success_seconds": 194.26,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 0.0,
+     "goal_center_mm": [
+      335.0,
+      295.0
+     ],
+     "source_yaw_deg": 0.0,
+     "source_center_mm": [
+      330.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 1,
+     "success": true,
+     "iou": 0.9707,
+     "first_success_seconds": 200.22,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 30.0,
+     "goal_center_mm": [
+      350.0,
+      325.0
+     ],
+     "source_yaw_deg": 135.0,
+     "source_center_mm": [
+      330.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 2,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 205.62,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 60.0,
+     "goal_center_mm": [
+      335.0,
+      310.0
+     ],
+     "source_yaw_deg": 270.0,
+     "source_center_mm": [
+      390.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 3,
+     "success": true,
+     "iou": 0.9669,
+     "first_success_seconds": 190.0,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 90.0,
+     "goal_center_mm": [
+      365.0,
+      295.0
+     ],
+     "source_yaw_deg": 45.0,
+     "source_center_mm": [
+      360.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 4,
+     "success": true,
+     "iou": 0.9509,
+     "first_success_seconds": 206.76,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 120.0,
+     "goal_center_mm": [
+      335.0,
+      325.0
+     ],
+     "source_yaw_deg": 180.0,
+     "source_center_mm": [
+      360.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 5,
+     "success": true,
+     "iou": 0.969,
+     "first_success_seconds": 215.96,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 150.0,
+     "goal_center_mm": [
+      365.0,
+      310.0
+     ],
+     "source_yaw_deg": 315.0,
+     "source_center_mm": [
+      330.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 6,
+     "success": true,
+     "iou": 0.9609,
+     "first_success_seconds": 258.42,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 180.0,
+     "goal_center_mm": [
+      350.0,
+      295.0
+     ],
+     "source_yaw_deg": 90.0,
+     "source_center_mm": [
+      390.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 7,
+     "success": true,
+     "iou": 0.9747,
+     "first_success_seconds": 202.32,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 210.0,
+     "goal_center_mm": [
+      365.0,
+      325.0
+     ],
+     "source_yaw_deg": 225.0,
+     "source_center_mm": [
+      390.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 8,
+     "success": true,
+     "iou": 0.9787,
+     "first_success_seconds": 202.68,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 240.0,
+     "goal_center_mm": [
+      350.0,
+      310.0
+     ],
+     "source_yaw_deg": 0.0,
+     "source_center_mm": [
+      360.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 9,
+     "success": true,
+     "iou": 0.9786,
+     "first_success_seconds": 207.42000000000002,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 270.0,
+     "goal_center_mm": [
+      335.0,
+      295.0
+     ],
+     "source_yaw_deg": 135.0,
+     "source_center_mm": [
+      330.0,
+      -270.0
+     ]
+    }
+   ],
+   "protocol": "tangram-packed",
+   "model_sha256": "6b6f13abfc724314e0f65b55db93e5437c3accceb4b5509e030f36ff748da97e"
+  },
+  "cat": {
+   "success_at_horizon": "9/10",
+   "ci95": [
+    0.5958499732047615,
+    0.9821237869049271
+   ],
+   "ever_sustained": 9,
+   "median_first_success_seconds": 207.1,
+   "episodes": [
+    {
+     "seed": 0,
+     "success": true,
+     "iou": 0.9785,
+     "first_success_seconds": 196.4,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 0.0,
+     "goal_center_mm": [
+      335.0,
+      295.0
+     ],
+     "source_yaw_deg": 0.0,
+     "source_center_mm": [
+      330.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 1,
+     "success": true,
+     "iou": 0.9781,
+     "first_success_seconds": 207.1,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 30.0,
+     "goal_center_mm": [
+      350.0,
+      325.0
+     ],
+     "source_yaw_deg": 135.0,
+     "source_center_mm": [
+      330.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 2,
+     "success": true,
+     "iou": 0.9089,
+     "first_success_seconds": 224.9,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 60.0,
+     "goal_center_mm": [
+      335.0,
+      310.0
+     ],
+     "source_yaw_deg": 270.0,
+     "source_center_mm": [
+      390.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 3,
+     "success": true,
+     "iou": 0.9651,
+     "first_success_seconds": 196.5,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 90.0,
+     "goal_center_mm": [
+      365.0,
+      295.0
+     ],
+     "source_yaw_deg": 45.0,
+     "source_center_mm": [
+      360.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 4,
+     "success": true,
+     "iou": 0.9785,
+     "first_success_seconds": 211.70000000000002,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 120.0,
+     "goal_center_mm": [
+      335.0,
+      325.0
+     ],
+     "source_yaw_deg": 180.0,
+     "source_center_mm": [
+      360.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 5,
+     "success": true,
+     "iou": 0.9785,
+     "first_success_seconds": 208.32,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 150.0,
+     "goal_center_mm": [
+      365.0,
+      310.0
+     ],
+     "source_yaw_deg": 315.0,
+     "source_center_mm": [
+      330.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 6,
+     "success": true,
+     "iou": 0.9676,
+     "first_success_seconds": 204.64000000000001,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 180.0,
+     "goal_center_mm": [
+      350.0,
+      295.0
+     ],
+     "source_yaw_deg": 90.0,
+     "source_center_mm": [
+      390.0,
+      -270.0
+     ]
+    },
+    {
+     "seed": 7,
+     "success": true,
+     "iou": 0.9238,
+     "first_success_seconds": 209.16,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 210.0,
+     "goal_center_mm": [
+      365.0,
+      325.0
+     ],
+     "source_yaw_deg": 225.0,
+     "source_center_mm": [
+      390.0,
+      -330.0
+     ]
+    },
+    {
+     "seed": 8,
+     "success": false,
+     "iou": 0.8034,
+     "first_success_seconds": null,
+     "failure_reasons": [
+      "on_table",
+      "coverage"
+     ],
+     "error": null,
+     "goal_yaw_deg": 240.0,
+     "goal_center_mm": [
+      350.0,
+      310.0
+     ],
+     "source_yaw_deg": 0.0,
+     "source_center_mm": [
+      360.0,
+      -300.0
+     ]
+    },
+    {
+     "seed": 9,
+     "success": true,
+     "iou": 0.9788,
+     "first_success_seconds": 193.14000000000001,
+     "failure_reasons": [],
+     "error": null,
+     "goal_yaw_deg": 270.0,
+     "goal_center_mm": [
+      335.0,
+      295.0
+     ],
+     "source_yaw_deg": 135.0,
+     "source_center_mm": [
+      330.0,
+      -270.0
+     ]
+    }
+   ],
+   "protocol": "tangram-packed",
+   "model_sha256": "6b6f13abfc724314e0f65b55db93e5437c3accceb4b5509e030f36ff748da97e"
+  }
+ },
+ "total_success_at_horizon": "39/40"
+}

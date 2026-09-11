@@ -252,3 +252,69 @@ def test_history_separates_seeds_and_exposes_checkpoint_identity(tmp_path):
     assert rows[0]["checkpoint_sha256"] == "checkpoint-hash"
     assert rows[0]["policy_sha256"] == "config-hash"
     assert all(row["verification"] != "verified" for row in rows)
+
+
+def test_scene_design_is_a_documented_grid_indexed_by_seed():
+    import numpy as np
+
+    from benchmark import SPLITS
+    from tangram import GOAL_OFFSETS, SOURCE_OFFSETS, SPLIT_SIZE, describe_layout, layout
+
+    assert SPLITS == {"train": 0, "dev": SPLIT_SIZE, "test": 2 * SPLIT_SIZE}
+    train = [describe_layout(layout(n, "house")) for n in range(60)]
+    assert {s["goal_yaw_deg"] for s in train} == {30.0 * k for k in range(12)}
+    assert {s["source_yaw_deg"] for s in train} == {45.0 * k for k in range(8)}
+    assert len({tuple(s["goal_center_mm"]) for s in train}) == len(GOAL_OFFSETS)
+    assert len({tuple(s["source_center_mm"]) for s in train}) == len(SOURCE_OFFSETS)
+    # Dev rotations fall exactly between the training ones; the test split reuses the grid.
+    dev = {describe_layout(layout(SPLITS["dev"] + n, "cat"))["goal_yaw_deg"] for n in range(60)}
+    assert dev == {15.0 + 30.0 * k for k in range(12)}
+    assert describe_layout(layout(SPLITS["test"] + 3, "cat"))["goal_yaw_deg"] == 90.0
+    assert layout(7, "square")["goal_yaw"] == layout(7, "square")["goal_yaw"]  # deterministic
+    assert np.allclose(
+        layout(7, "square")["goal_center"] - layout(7, "house")["goal_center"], [0, -0.03]
+    )
+
+
+def test_scene_override_is_applied_and_recorded(tmp_path):
+    import json
+
+    from env import Env
+    from tools.collect import main as collect
+
+    env = Env("panda")
+    env.reset([4], ["house"], scenes=[{"goal_yaw": 0.5, "source_yaw": None}])
+    assert env.scenes[0]["goal_yaw"] == 0.5 and env.scenes[0]["source_yaw"] != 0.5
+    collect(
+        [
+            "--target",
+            "house",
+            "--episodes",
+            "1",
+            "--steps",
+            "10",
+            "--policy",
+            "policy.py",
+            "--keep-failures",
+            "--goal-yaw",
+            "45",
+            "--out",
+            str(tmp_path),
+        ]
+    )
+    row = json.loads((tmp_path / "index.jsonl").read_text().splitlines()[0])
+    assert row["goal_yaw_deg"] == 45.0 and "source_yaw_deg" in row and "goal_center_mm" in row
+
+
+def test_every_designed_scene_keeps_the_pieces_inside_the_workspace():
+    from benchmark import SPLITS
+    from tangram import WORKSPACE, layout, piece_radii
+
+    for target in ("square", "rectangle", "house", "cat"):
+        for base in (SPLITS["train"], SPLITS["dev"], SPLITS["test"]):
+            for n in range(60):
+                radii = piece_radii(layout(base + n, target), target)
+                assert radii.min() >= WORKSPACE[0] and radii.max() <= WORKSPACE[1], (
+                    target,
+                    base + n,
+                )

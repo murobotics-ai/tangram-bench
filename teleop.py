@@ -72,26 +72,44 @@ class Teleop:
         d.qpos[:] = env.data[0].qpos
         error = self.residual()
         self.singular = False
+        # Solve inside the actuator range by a small margin: MuJoCo's joint limits are
+        # soft, so a command parked exactly on a stop settles a few millimetres short.
+        lower, upper = env.limits[:-1, 0] + 0.03, env.limits[:-1, 1] - 0.03
         for _ in range(12):
             mujoco.mj_jacSite(env.model, d, self.jp, self.jr, env.tcp)
-            jac = np.vstack((self.jp[:, : env.narm], 0.2 * self.jr[:, : env.narm]))
-            u, values, vt = np.linalg.svd(jac, full_matrices=True)
-            self.singular |= values[-1] < 0.01
-            damping = 0.002 + 0.03 * max(0, 1 - values[-1] / 0.05) ** 2
-            delta = vt[:6].T @ ((values / (values**2 + damping**2)) * (u.T @ error))
-            if env.narm > 6:
-                # Exact redundant subspace: prefer the reset posture without a damped projector's task leakage.
-                null = vt[6:].T
-                delta += 0.15 * null @ (null.T @ (self.posture - d.qpos[: env.narm]))
-            delta *= min(1, 0.1 / max(np.max(abs(delta)), 1e-12))
-            previous = d.qpos[: env.narm].copy()
-            # Clipping at joint limits can spoil a Newton step; reject residual increases.
-            for fraction in (1.0, 0.5, 0.25):
-                d.qpos[: env.narm] = np.clip(
-                    previous + fraction * delta, env.limits[:-1, 0], env.limits[:-1, 1]
+            full = np.vstack((self.jp[:, : env.narm], 0.2 * self.jr[:, : env.narm]))
+            q = d.qpos[: env.narm]
+            active = np.ones(env.narm, dtype=bool)
+            for _ in range(3):
+                # A joint pushed against its limit is not free: solve with it frozen, so
+                # clipping never turns a null-space or task step into a stray motion.
+                jac = full * active
+                u, values, vt = np.linalg.svd(jac, full_matrices=True)
+                self.singular |= values[-1] < 0.01
+                damping = 0.002 + 0.03 * max(0, 1 - values[-1] / 0.05) ** 2
+                delta = vt[:6].T @ ((values / (values**2 + damping**2)) * (u.T @ error))
+                if env.narm > 6:
+                    # Exact redundant subspace: prefer the reset posture without a damped
+                    # projector's task leakage.
+                    null = vt[6:].T
+                    delta += 0.15 * null @ (null.T @ ((self.posture - q) * active))
+                delta *= active
+                pinned = active & (
+                    ((q <= lower + 1e-6) & (delta < 0)) | ((q >= upper - 1e-6) & (delta > 0))
                 )
+                if not pinned.any():
+                    break
+                active &= ~pinned
+            delta *= min(1, 0.1 / max(np.max(abs(delta)), 1e-12))
+            previous = q.copy()
+            # Clipping at joint limits can spoil a Newton step; reject residual increases,
+            # and never trade position accuracy for orientation.
+            for fraction in (1.0, 0.5, 0.25):
+                d.qpos[: env.narm] = np.clip(previous + fraction * delta, lower, upper)
                 candidate = self.residual()
-                if np.linalg.norm(candidate) <= max(np.linalg.norm(error), 1e-4):
+                if np.linalg.norm(candidate) <= max(np.linalg.norm(error), 1e-4) and np.linalg.norm(
+                    candidate[:3]
+                ) <= max(1.05 * np.linalg.norm(error[:3]), 2e-4):
                     error = candidate
                     break
             else:

@@ -33,6 +33,7 @@ from benchmark import (
 )
 from env import CAMERAS, DT, IMAGE_SIZE, SUBSTEPS, Env
 from shapes import SUITES, TARGETS, VERSION, prompt
+from tangram import describe_layout
 from tools.prepare import REVISION
 
 
@@ -148,6 +149,7 @@ def run_batch(
             trace["plan"] = np.asarray([str(line) for line in plan], dtype=str)
             trace["prompt"] = env.prompts[j]
             row = {"seed": seed, "target": env.targets[j], "status": status[j], "error": errors[j]}
+            row.update(describe_layout(env.scenes[j]))
             row["policy_access"] = (
                 getattr(drivers[j].policy, "access", "state") if drivers[j] else "state"
             )
@@ -296,7 +298,7 @@ def main(argv=None):
         "max_output_tokens": args.max_output_tokens,
         "prompt": args.prompt,
         "prompts": {t: args.prompt if args.prompt is not None else prompt(t) for t in suite},
-        "dataset_version": VERSION,
+        "corpus": VERSION,
         "targets": [suite[i % len(suite)] for i in range(args.episodes)],
         "requested_episodes": args.episodes,
         "seeds": list(

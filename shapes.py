@@ -13,7 +13,7 @@ from shapely.ops import unary_union
 
 from tangram import NOMINAL_VERTICES, SIDE, THICKNESS, TILES, VERTICES, rotation
 
-VERSION = "silhouettes-v2"
+VERSION = "silhouettes"
 TARGETS = ("square", "rectangle", "house", "cat")
 # The general task prompt names the figure; per-step subtasks are recorded by
 # demonstrators (see examples/oracle.py) and never shown to a policy at evaluation.
@@ -89,12 +89,12 @@ def canonical(name):
     return outline, np.array(xy), np.array(yaws)
 
 
-def solution(name, seed):
+def solution(name, seed, scene=None):
     """Privileged certificate for corpus verification/oracle baselines only."""
     from tangram import goal_transform
 
     _, xy, yaws = canonical(name)
-    center, yaw = goal_transform(seed, name)
+    center, yaw = goal_transform(seed, name, scene)
     poses = np.zeros((7, 7))
     poses[:, :2] = xy @ rotation(yaw).T + center
     poses[:, 2] = THICKNESS / 2

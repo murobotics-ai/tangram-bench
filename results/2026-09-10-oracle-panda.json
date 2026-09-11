@@ -6,7 +6,7 @@
  "split": "train",
  "seeds": "0-9 per figure",
  "steps": 12000,
- "protocol": "tangram-packed-v6",
+ "protocol": "tangram-packed",
  "figures": {
   "square": {
    "success_rate": 0.3,
@@ -192,7 +192,7 @@
     0.10779126740630099,
     0.6032218525388546
    ],
-   "note": "silhouettes-v2 classic house; the v1 pentagon house scored 2/10",
+   "note": "classic house; the earlier pentagon house scored 2/10",
    "episodes": [
     {
      "seed": 0,
@@ -366,5 +366,5 @@
    ]
   }
  },
- "corpus": "silhouettes-v2"
+ "corpus": "silhouettes"
 }

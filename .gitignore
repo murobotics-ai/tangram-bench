@@ -8,7 +8,8 @@ assets/menagerie/
 
 .ruff_cache/
 
-data/
-outputs/
-checkpoints/
+/data/
+/outputs/
+/checkpoints/
 .env
+MUJOCO_LOG.TXT

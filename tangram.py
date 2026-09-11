@@ -9,6 +9,22 @@ THICKNESS = 0.005
 INSET = 0.0005
 KNOB_WIDTH = 0.02
 KNOB_HEIGHT = 0.04
+# Success tolerance: 5 mm per piece. The benchmark asks whether a policy infers
+# the figure and the order of the pieces, not whether it places slabs to a
+# millimetre. Calibrated on certificate layouts of all four figures with every
+# piece displaced by 5 mm in a random direction and turned up to 3 degrees (1,200
+# samples): IoU median 0.915, minimum 0.875; footprint overlap median 2.3%,
+# maximum 5.6%; 1 failure in 10,000 samples. At 10 mm the IoU median is 0.85.
+# A rigid shift of the whole assembly by 10 mm still passes on most figures: the
+# test is about the assembly, not its exact spot. A slab resting on a
+# neighbour's edge sits 2-3 mm high and tilts about 2 degrees.
+IOU_THRESHOLD = 0.87
+OVERLAP_THRESHOLD = 0.06
+# The IoU is dominated by the large pieces; this gate keeps every piece, small ones
+# included, within the tolerance: at 5 mm the least-covered piece is 0.875 inside.
+PIECE_COVERAGE = 0.85
+TABLE_TOLERANCE = 0.004  # Body origin within this of half-thickness above the table.
+FLAT_DEGREES = 8  # Local z axis within this of upward vertical.
 # A true dissection: two large, one medium, two small triangles, square, parallelogram.
 TILES = [
     [(0, 1), (1, 1), (0.5, 0.5)],
@@ -58,19 +74,78 @@ def rotation(yaw):
     return np.array([[c, -s], [s, c]])
 
 
-def goal_transform(seed, target="square"):
-    """Independent goal random stream; larger figures keep clear of the source."""
-    rng = np.random.default_rng(np.random.SeedSequence([seed, 1]))
-    center = np.array([0.32, 0.20 if target == "square" else 0.27]) + rng.uniform(-0.015, 0.015, 2)
-    yaw = rng.uniform(-np.pi, np.pi)
-    return center, yaw
+# Scene design. Nothing about a scene is drawn at random: the seed indexes a
+# documented grid of rotations and offsets, so a dataset's coverage can be
+# stated exactly and the dev split can ask for rotations never seen in training.
+GOAL_YAWS = 12  # goal silhouette yaw on a 30 degree grid
+SOURCE_YAWS = 8  # packed square yaw on a 45 degree grid
+GOAL_OFFSETS = [(x, y) for x in (-0.015, 0.0, 0.015) for y in (-0.015, 0.0, 0.015)]
+SOURCE_OFFSETS = [(x, y) for x in (-0.03, 0.0, 0.03) for y in (-0.03, 0.0, 0.03)]
+SOURCE_CENTER = np.array([0.36, -0.30])
+SPLIT_SIZE = 100000  # seed // SPLIT_SIZE: 0 train, 1 dev, 2 test (benchmark.SPLITS)
+# Workspace: every piece centre, at the source and at the goal, lies between these
+# radii from the robot base. Closer than 0.28 m the elbow folds against its stop and
+# the forearm meets the shoulder column; the centres below keep every designed
+# scene inside (checked by a test over the train and dev grids).
+WORKSPACE = (0.28, 0.66)
 
 
-def goal(seed, target="square"):
+def goal_center(target):
+    return np.array([0.35, 0.28 if target == "square" else 0.31])
+
+
+def piece_radii(scene, target):
+    """Distances from the base of every piece centre at the goal and at the source."""
+    from shapes import solution
+
+    goal_xy = np.array(solution(target, 0, scene))[:, :2]
+    source = ((CENTERS - 0.5) * SIDE) @ rotation(scene["source_yaw"]).T + scene["source_center"]
+    return np.linalg.norm(np.vstack([goal_xy, source]), axis=1)
+
+
+def layout(seed, target="square"):
+    """The scene for a seed: goal and source pose, plus the design indices behind them.
+
+    Within a split, seed n takes goal yaw n mod 12 on the 30 degree grid; the
+    goal offset, source yaw and source offset advance with strides coprime to
+    their grid sizes, so 60 seeds visit every value of each grid. The dev split
+    rotates the goal a further 15 degrees, half a grid step: poses between the
+    training rotations, never equal to one.
+    """
+    split, n = divmod(int(seed), SPLIT_SIZE)
+    goal_yaw = 2 * np.pi / GOAL_YAWS * (n % GOAL_YAWS) + (np.pi / GOAL_YAWS if split == 1 else 0)
+    goal_offset = GOAL_OFFSETS[(n * 5) % len(GOAL_OFFSETS)]
+    source_yaw = 2 * np.pi / SOURCE_YAWS * ((n * 3) % SOURCE_YAWS)
+    source_offset = SOURCE_OFFSETS[(n * 7 + 2) % len(SOURCE_OFFSETS)]
+    return {
+        "goal_center": goal_center(target) + goal_offset,
+        "goal_yaw": float(goal_yaw),
+        "source_center": SOURCE_CENTER + source_offset,
+        "source_yaw": float(source_yaw),
+    }
+
+
+def describe_layout(scene):
+    """Degrees and millimetres, for index rows and result files."""
+    return {
+        "goal_yaw_deg": round(float(np.degrees(scene["goal_yaw"])) % 360, 1),
+        "goal_center_mm": [round(float(v) * 1000, 1) for v in scene["goal_center"]],
+        "source_yaw_deg": round(float(np.degrees(scene["source_yaw"])) % 360, 1),
+        "source_center_mm": [round(float(v) * 1000, 1) for v in scene["source_center"]],
+    }
+
+
+def goal_transform(seed, target="square", scene=None):
+    """Goal centre and yaw for a seed (or for an explicit scene)."""
+    scene = scene or layout(seed, target)
+    return scene["goal_center"], scene["goal_yaw"]
+
+
+def goal(seed, target="square", scene=None):
     from shapes import canonical
 
     outline, _, _ = canonical(target)
-    center, yaw = goal_transform(seed, target)
+    center, yaw = goal_transform(seed, target, scene)
     return outline @ rotation(yaw).T + center
 
 
@@ -141,20 +216,26 @@ def score_batch(poses, velocities, outlines):
         0, shapely.area(footprints).sum(axis=-1) - shapely.area(union)
     ) / shapely.area(targets)
     flat = np.all(
-        (1 - 2 * (poses[..., 4] ** 2 + poses[..., 5] ** 2)) >= np.cos(np.deg2rad(5)), axis=-1
+        (1 - 2 * (poses[..., 4] ** 2 + poses[..., 5] ** 2)) >= np.cos(np.deg2rad(FLAT_DEGREES)),
+        axis=-1,
     )
-    on_table = np.all(abs(poses[..., 2] - THICKNESS / 2) < 0.002, axis=-1)
+    on_table = np.all(abs(poses[..., 2] - THICKNESS / 2) < TABLE_TOLERANCE, axis=-1)
     still = np.all(np.linalg.norm(velocities[..., :3], axis=-1) < 0.01, axis=-1)
     still &= np.all(np.linalg.norm(velocities[..., 3:], axis=-1) < 0.1, axis=-1)
     return {
         "iou": iou,
         "coverage": intersection / shapely.area(targets),
-        "pieces_in_goal": (piece_coverage >= 0.95).sum(axis=-1),
+        "pieces_in_goal": (piece_coverage >= PIECE_COVERAGE).sum(axis=-1),
         "overlap_fraction": overlap,
         "on_table": on_table,
         "flat": flat,
         "still": still,
-        "success": on_table & flat & still & (overlap < 0.01) & (iou >= 0.95),
+        "success": on_table
+        & flat
+        & still
+        & (overlap <= OVERLAP_THRESHOLD)
+        & (iou >= IOU_THRESHOLD)
+        & (piece_coverage >= PIECE_COVERAGE).all(axis=-1),
     }
 
 

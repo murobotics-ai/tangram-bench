@@ -12,12 +12,13 @@ import numpy as np
 
 from tangram import score_batch
 
-PROTOCOL = "tangram-packed-v6"
+PROTOCOL = "tangram-packed"
 SCHEMA_VERSION = 1
 SPLITS = {"train": 0, "dev": 100000, "test": 200000}
 CONTROL_SECONDS = 0.02
 HOLD_STEPS = 25
-DEFAULT_STEPS = 12000  # 240 simulated seconds; the reference controller needs about 200.
+DEFAULT_STEPS = 15000  # 300 simulated seconds: seven careful placements take about 200,
+# and a slab carried faster than 0.06 m/s swings out of the pinch, so one recovery must fit.
 STATE_FIELDS = ("qpos", "qvel", "tcp_pos", "tcp_mat", "pieces", "piece_velocities", "goal")
 
 
@@ -148,7 +149,7 @@ COMPARISON_FIELDS = (
     "max_chunk",
     "prompts",
     "targets",
-    "dataset_version",
+    "corpus",
     "max_inference_calls",
     "max_output_tokens",
     "policy_access",

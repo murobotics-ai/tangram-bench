@@ -1,7 +1,7 @@
 """A small physical environment. Policies receive copies, never simulator handles.
 
 Both backends consume the same MJCF and bounded position-actuator targets.
-Warp batches physics on GPU; observation transfer and scoring remain on CPU in v0.
+Warp batches physics on GPU; observation transfer and scoring remain on CPU for now.
 """
 
 import xml.etree.ElementTree as ET
@@ -24,6 +24,7 @@ from tangram import (
     VERTICES,
     goal,
     knob_yaw,
+    layout,
     rotation,
 )
 from tools.prepare import ASSETS, ROBOTS
@@ -45,6 +46,11 @@ def camera_axes(position, target):
 
 
 def make_model(robot="panda"):
+    return mujoco.MjModel.from_xml_string(scene_xml(robot))
+
+
+def scene_xml(robot="panda"):
+    """The single-table MJCF: robot, table, lights, cameras and the seven pieces."""
     source = ASSETS / ROBOTS[robot]
     if not source.exists():
         raise FileNotFoundError("Robot assets missing. Run: uv run -m tools.prepare")
@@ -71,6 +77,9 @@ def make_model(robot="panda"):
     option.set("solver", "Newton")
     option.set("iterations", "50")
     option.set("cone", "elliptic")
+    # Default impratio. A slab pinched by its knob creeps 4-13 mm during a 13 s carry;
+    # impratio 10 halves that but stiffens every contact and cost 3 of 40 assemblies
+    # (2026-09-11), and tripling the finger force helped far less. Kept as is.
     world = root.find("worldbody")
     # Lighting is part of the benchmark scene, so drop the robot file's own light and
     # define every source here. These values shape future pixel observations.
@@ -164,13 +173,72 @@ def make_model(robot="panda"):
             friction=".8 .01 .0001",
             condim="4",
         )
-    return mujoco.MjModel.from_xml_string(ET.tostring(root, encoding="unicode"))
+    return ET.tostring(root, encoding="unicode")
 
 
-def draw_goal(scene, outline):
+FLEET_SPACING = (2.3, 2.6)  # Metres between tables (2 m square) along x and y.
+
+
+def fleet_model(robot, count, columns):
+    """Display-only model with `count` copies of the scene laid out on a grid.
+
+    Physics never runs on it: the collector's worker processes simulate their own
+    worlds and publish `qpos`; this model draws them all in one 3D scene. Returns
+    the model, the (count, 2) table offsets, a (count, nq) index array and an
+    (nq, 2) shift matrix: `data.qpos[index[i]] = q + shift @ offsets[i]` places
+    world i from its own `qpos` (free-joint positions are absolute, so piece
+    coordinates move with the table).
+    """
+    child = mujoco.MjSpec.from_string(scene_xml(robot))
+    for light in list(child.lights):
+        child.delete(light)  # The renderer's light budget; one lamp lights the hall instead.
+    parent = mujoco.MjSpec()
+    parent.copy_during_attach = True
+    parent.meshdir = child.meshdir
+    for field in ("integrator", "cone", "iterations", "timestep"):
+        setattr(parent.option, field, getattr(child.option, field))
+    for field in ("ambient", "diffuse", "specular"):
+        getattr(parent.visual.headlight, field)[:] = getattr(child.visual.headlight, field)
+    offsets = np.array(
+        [
+            [(i % columns) * FLEET_SPACING[0], -(i // columns) * FLEET_SPACING[1]]
+            for i in range(count)
+        ]
+    )
+    for i, (x, y) in enumerate(offsets):
+        parent.attach(child, prefix=f"w{i}_", frame=parent.worldbody.add_frame(pos=[x, y, 0]))
+    center = offsets.mean(axis=0)
+    parent.worldbody.add_geom(
+        type=mujoco.mjtGeom.mjGEOM_PLANE,
+        size=[0, 0, 1],
+        pos=[center[0], center[1], -0.1],
+        rgba=[0.22, 0.24, 0.27, 1],
+    )
+    light = parent.worldbody.add_light(
+        pos=[center[0], center[1], 6], dir=[0.2, 0.3, -1], diffuse=[0.7] * 3, ambient=[0.15] * 3
+    )
+    light.type = mujoco.mjtLightType.mjLIGHT_DIRECTIONAL
+    single = mujoco.MjModel.from_xml_string(scene_xml(robot))
+    model = parent.compile()
+    index = np.empty((count, single.nq), dtype=int)
+    shift = np.zeros((single.nq, 2))
+    for j in range(single.njnt):
+        if single.jnt_type[j] == mujoco.mjtJoint.mjJNT_FREE:
+            shift[single.jnt_qposadr[j], 0] = shift[single.jnt_qposadr[j] + 1, 1] = 1
+    for i in range(count):
+        rows = []
+        for j in range(single.njnt):
+            end = single.jnt_qposadr[j + 1] if j + 1 < single.njnt else single.nq
+            start = model.joint(f"w{i}_{single.joint(j).name}").qposadr[0]
+            rows.extend(range(start, start + end - single.jnt_qposadr[j]))
+        index[i] = rows
+    return model, offsets, index, shift
+
+
+def draw_goal(scene, outline, offset=(0.0, 0.0)):
     """Exact concave silhouette triangles, visual only; never add collision geometry."""
     for triangle in goal_triangles(tuple(map(tuple, outline))):
-        a, b, c = triangle
+        a, b, c = (np.asarray(v) + offset for v in triangle)
         # The renderer's triangle is (0,0), (1,0), (0,1); this affine basis maps it exactly.
         mat = np.column_stack((np.r_[b - a, 0], np.r_[c - a, 0], [0, 0, 1]))
         mujoco.mjv_initGeom(
@@ -226,8 +294,12 @@ class Env:
             self.wm = mjw.put_model(self.model)
             self.wd = mjw.make_data(self.model, nworld=num_envs, nconmax=256, njmax=1024)
 
-    def reset(self, seeds, targets=None, prompt=None):
-        """Seed each world; `prompt` overrides the per-figure task text for every world."""
+    def reset(self, seeds, targets=None, prompt=None, scenes=None):
+        """Seed each world; `prompt` overrides the per-figure task text for every world.
+
+        `scenes` overrides the seed's designed layout per world (see tangram.layout):
+        a dict with any of goal_yaw, goal_center, source_yaw, source_center.
+        """
         if len(seeds) != self.num_envs or any(int(s) < 0 for s in seeds):
             raise ValueError("Provide one nonnegative seed per world")
         self.targets = list(targets) if targets is not None else ["square"] * self.num_envs
@@ -239,9 +311,18 @@ class Env:
             raise ValueError("Prompt must contain 1..1000 characters")
         self.prompts = [prompt if prompt is not None else task_prompt(t) for t in self.targets]
         self.prompt = self.prompts[0]
-        self.outlines = [goal(int(s), target) for s, target in zip(seeds, self.targets)]
+        self.scenes = []
+        for i, (s, target) in enumerate(zip(seeds, self.targets)):
+            scene = layout(int(s), target)
+            if scenes is not None and scenes[i]:
+                scene.update({k: v for k, v in scenes[i].items() if v is not None})
+            self.scenes.append(scene)
+        self.outlines = [
+            goal(int(s), target, scene)
+            for s, target, scene in zip(seeds, self.targets, self.scenes)
+        ]
         self.steps = 0
-        for d, seed in zip(self.data, seeds):
+        for d, seed, scene in zip(self.data, seeds, self.scenes):
             mujoco.mj_resetData(self.model, d)
             d.qpos[: self.narm] = HOME[self.robot]
             d.qpos[self.narm : self.narm + 2] = (
@@ -249,9 +330,7 @@ class Env:
             )
             d.ctrl[: self.narm] = HOME[self.robot]
             d.ctrl[-1] = self.limits[-1, 1]
-            rng = np.random.default_rng(np.random.SeedSequence([int(seed), 0]))
-            center = rng.uniform([0.28, -0.30], [0.36, -0.24])
-            yaw = rng.uniform(-np.pi, np.pi)
+            center, yaw = scene["source_center"], scene["source_yaw"]
             xy = ((CENTERS - 0.5) * SIDE) @ rotation(yaw).T + center
             # Move the complete dissection rigidly; independent piece yaw breaks the packing.
             # Start on the table: dropping touching tiles can disturb their shared edges.
@@ -322,18 +401,18 @@ class Env:
         queried or a frame is recorded, never on every physics step. Warp worlds
         are synced to CPU `MjData` by `observe()`, so the same code serves both.
         """
+        return {name: self.render(name, index) for name in CAMERAS}
+
+    def render(self, camera, index=0):
+        """Render one named camera ("context" is the third-person view no policy sees)."""
         if not self.pixels:
             raise RuntimeError("Construct Env(pixels=True) to render observations")
         if self.renderer is None:
             self.renderer = mujoco.Renderer(self.model, *IMAGE_SIZE)
-        d = self.data[index]
-        images = {}
-        for name in CAMERAS:
-            self.renderer.update_scene(d, camera=name)
-            # The target silhouette is painted on the table, so pixels carry the goal.
-            draw_goal(self.renderer.scene, self.outlines[index])
-            images[name] = self.renderer.render().copy()
-        return images
+        self.renderer.update_scene(self.data[index], camera=camera)
+        # The target silhouette is painted on the table, so pixels carry the goal.
+        draw_goal(self.renderer.scene, self.outlines[index])
+        return self.renderer.render().copy()
 
     def close(self):
         if self.renderer is not None:

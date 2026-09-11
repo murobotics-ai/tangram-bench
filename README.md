@@ -19,10 +19,10 @@ question and measures it exactly: **can a policy rebuild a tangram silhouette it
 was never trained on?** A Franka Panda starts with the seven pieces packed as a
 square, sees the target silhouette painted on the table, and has to assemble it.
 Success is a global constraint over all seven pieces, scored by exact geometry.
-Everything runs in simulation on one laptop with an 8 GB GPU, in about 4,000 lines
+Everything runs in simulation on one laptop with an 8 GB GPU, in about 4,800 lines
 of plain Python: record demonstrations, train a policy, evaluate it on seen and
 unseen shapes, and compare results by seed. The current headline is the
-reference controller at **15 of 40 assemblies**; the first learned baseline is
+reference controller at **39 of 40 assemblies**; the first learned baseline is
 pending (see [Results](#results)).
 
 ## The problem in one minute
@@ -30,8 +30,12 @@ pending (see [Results](#results)).
 - **Pieces.** The classic seven-piece dissection, 5 mm slabs with a square knob
   on each centroid. The knob is the only intended grasp, so the benchmark
   measures *where each piece goes*, not how to pinch a thin slab off a table.
-- **Start.** The pieces are packed as a square at a random position and yaw.
-- **Goal.** A silhouette drawn on the table at another random pose: square,
+- **Start.** The pieces are packed as a square; its yaw comes from a 45° grid
+  and its centre from a 3×3 grid of ±3 cm, both indexed by the seed.
+- **Goal.** A silhouette drawn on the table, yaw on a 30° grid and centre on a
+  3×3 grid of ±1.5 cm, again indexed by the seed, so a dataset's coverage is a
+  statement, not a sample (see the protocol's scene design). Every piece stays
+  between 0.28 and 0.66 m from the base, the arm's comfortable field: square,
   rectangle or the classic tangram house (body, roof, chimney) for training, and
   the **cat**, which no policy trains on. The policy also gets a text prompt.
 - **Observation.** Either exact state (joint angles, piece poses, goal outline)
@@ -46,27 +50,35 @@ pending (see [Results](#results)).
   label changing over time.
 - **Action.** Absolute joint targets in radians plus gripper opening in [0, 1],
   at 50 Hz, one action or a chunk per call.
-- **Success.** Silhouette IoU ≥ 0.95, overlap under 1%, every piece flat, on the
-  table and still for half a second. The inset pieces cap IoU at 0.979, so
-  success means every piece within about a millimetre.
-- **Splits.** *Train* seeds feed demonstrations; *dev* is the training figures at
-  unseen poses; *test* is the cat. Reporting dev and test side by side is the
-  point: the gap is the generalization result.
+- **Success.** Silhouette IoU ≥ 0.87, footprint overlap ≤ 6%, every piece at
+  least 85% inside the silhouette, within 8° of flat and 4 mm of the table, all
+  still for half a second. The thresholds
+  are calibrated on sampled layouts with every piece 5 mm off and turned up to
+  3° (one failure in 10,000 samples); 10 mm on every piece fails in most
+  samples. The test is about how the figure is assembled more than where it
+  sits: the whole assembly shifted 10 mm can still pass. The benchmark measures
+  whether the policy inferred the figure and the order of the pieces, not
+  millimetre control. The final IoU is reported alongside for precision (the
+  inset pieces cap it at 0.979).
+- **Splits.** *Train* seeds feed demonstrations; *dev* is the training figures
+  rotated 15° off the training grid, poses never seen; *test* is the cat.
+  Reporting dev and test side by side is the point: the gap is the
+  generalization result.
 
 Why tangram: most manipulation suites check a per-object condition and can be
 matched by models that ignore language or collapse under pose randomization
 ([Jiang et al., 2026](https://arxiv.org/abs/2606.04233)). Here the target is a
 silhouette, not a list of poses, so the policy must infer an assignment before any
 control problem exists; each placed piece constrains the rest; several
-decompositions tile the same outline and all of them score; and millimetre
-precision means control errors show up directly. Frontier vision-language models
+decompositions tile the same outline and all of them score; and the 5 mm
+tolerance keeps the score about the assembly, not about servo precision. Frontier vision-language models
 still struggle with the planning half alone ([TangramSR,
 2026](https://arxiv.org/abs/2602.05570)), which is why the benchmark also has an
 API track for language models.
 
 Two caveats, stated plainly. Four public figures and one held-out animal do not
 establish broad shape-family generalization; a generated corpus with structural
-families is the next milestone in [docs/plan.md](docs/plan.md). And precise
+families is the next milestone. And precise
 placement of thin slabs may dominate over reasoning; the reference controller's
 failure modes below say how much.
 
@@ -80,14 +92,14 @@ uv run -m tools.prepare                 # robot assets, pinned upstream revision
 uv run view.py --target house           # look at the scene
 ```
 
-`bash reproduce.sh` runs the whole pipeline below unattended: about two hours of
-demonstrations, two to four hours of fine-tuning and half an hour of evaluation.
+`bash reproduce.sh` runs the whole pipeline below unattended: about half an hour of
+demonstrations with ten arms in parallel, two to four hours of fine-tuning and half an hour of evaluation.
 
 ## The pipeline
 
 ```bash
 uv run view.py --teleop --record data/house-teleop        # 1. drive the arm, record demos
-uv run -m tools.collect --target house --episodes 60      # 1'. scripted demos for one figure
+uv run -m tools.collect --target house --episodes 60 --workers 10 --watch   # 1'. ten arms at once
 uv run -m tools.export data/square data/rectangle data/house --out data/lerobot/train
 uv run -m tools.train --policy smolvla                    # 2. fine-tune (lerobot-train)
 uv run eval.py --system examples/systems/lerobot.json --obs pixels --max-chunk 50 \
@@ -104,7 +116,7 @@ data/lerobot/train/        exported LeRobot dataset                tools.export
 checkpoints/               pretrained weights from the Hub         tools.train, first run
 outputs/train/<name>/      fine-tuning runs; checkpoints/last/pretrained_model is what eval loads
 outputs/runs/<name>.json   evaluation results; trajectories in <name>.artifacts/   eval.py
-results/                   versioned summaries and the experiment log (committed)
+results/                   summaries and the experiment log, committed to git
 ```
 
 ### 1. Demonstrations
@@ -115,10 +127,27 @@ per episode: top and wrist images, `qpos` as state, the commanded action, piece
 poses, goal, the figure prompt and the per-frame `subtask` annotation the
 demonstrator exposes, at `--fps` frames per second (default 10). Replay one with
 `uv run view.py --demo data/house/episode-3.npz` and watch the annotation change. A frame's
-action is the last command of its 50/fps-tick interval, so a policy that predicts
-one action per frame and holds it for the interval reproduces the demonstration.
-Episodes stop one second after a held success. Failed attempts are listed in
+action is the last command of its 50/fps-tick interval; a policy that predicts one
+action per frame and holds it for the interval follows the demonstration to
+within about 0.05 rad (the demonstrator may change its command inside the
+interval), which is an imitation target, not an exact replay.
+Episodes stop four seconds after a held success, once the arm has returned
+home. Failed attempts are listed in
 `index.jsonl` and skipped unless `--keep-failures`.
+
+A full-horizon episode takes about a minute of wall time on one core, so
+`--workers 10` runs ten arms on ten tables at once, one process each with
+headless rendering: about five times the throughput on the laptop (ten arms
+record 3,000 steps each in 24 s, one arm in 12 s), for a few hundred megabytes
+of GPU memory and about 1.5 GB of RAM per worker at its peak, since a worker
+keeps its episode's frames in preallocated arrays until it writes the file. The seeds come out identical to a sequential run (states and actions bit for
+bit, camera pixels up to GPU rasterization noise of one unit). `--watch` opens
+one 3D scene with all the arms on their own tables, the way multi-robot RL
+arenas look, with each arm's seed, progress and current subtask listed; orbit
+with the mouse. Physics stays in the worker processes, the window only draws
+what they publish. `--watch grid` tiles one camera per arm instead
+(`--watch-camera context|top|wrist`). Closing the window does not stop the
+collection.
 
 Teleoperation records the same format. The keyboard stands in for a SpaceMouse:
 **W/S A/D Q/E** translate, **Z/X T/G C/V** rotate, **R/F** open and close the
@@ -142,7 +171,7 @@ The first baseline is **SmolVLA** (LeRobot, ~450 M parameters): the only
 vision-language-action model that fine-tunes on an 8 GB laptop GPU. Measured here:
 batch 4 peaks at 2.4 GB. ACT is the cheap non-language control. π0.5 needs 24 GB or
 more to fine-tune and about 8 GB of weights at inference, so it is a cloud option
-that the same wrapper can run. Sources and numbers: [docs/plan.md](docs/plan.md).
+that the same wrapper can run. Sources and numbers: [results/LOG.md](results/LOG.md).
 
 ```bash
 uv run -m tools.train --policy smolvla --steps 20000      # add --dry-run to see the command
@@ -168,7 +197,7 @@ uv run -m tools.results verify outputs/runs/smolvla-dev.json
 uv run -m tools.results compare outputs/runs/hold-dev.json outputs/runs/smolvla-dev.json
 ```
 
-Evaluation runs seeded episodes of 240 simulated seconds, saves every state and
+Evaluation runs seeded episodes of 300 simulated seconds, saves every state and
 action, and never overwrites a result. Policy exceptions count as failures and
 stay in the denominator; the summary carries a 95% Wilson interval. `verify`
 recomputes every score from the saved trajectory without the policy; `compare`
@@ -210,65 +239,89 @@ bill is predictable.
 `examples/oracle.py` assembles any silhouette from its solution certificate using
 only the joint-action interface and physical contact. It chooses among the four
 equivalent knob grasps and two carry heights by checking IK at pickup, transit and
-placement, hovers above the target, descends slowly, releases 4 mm above the table
-once the piece is observed within 2.5 mm and 2.5°, re-grasps a piece it loses and
-re-places one that lands on a neighbour. It declares `access = "oracle"` and is a
-data generator and an execution ceiling, never a leaderboard entry.
+placement, along the path and not only at its corners, and counting the arm's
+self-collisions, which IK cannot see. It glides into the grasp configuration,
+carries with the hand vertical and corrects the grasp in yaw only (a slab pivots
+in the pinch, so tilting the hand after it winds the wrist up), hovers above the
+target, descends slowly, releases 4 mm above the table once the piece is observed
+within 2.5 mm and 2.5°, re-grasps a piece it loses and re-places one that lands on
+a neighbour, re-plans a phase that stalls for 3 s, lowers a badly held slab to
+the table before letting go (a drop from carry height flips it knob-down), gives
+a piece up after three attempts rather than ending the episode, and re-places
+whatever the success test still rejects after the first pass. Carries run at
+0.06 m/s: at 0.07 and 0.08 m/s the slab slips out of the pinch (measured, 40
+seeds each). Peak TCP accelerations are about 3 m/s² (5 m/s² at most, from the
+velocity vector at 10 fps) and no still interval exceeds 7 s, so the
+demonstrations are smooth and never hang. It declares `access = "oracle"` and is a data generator and an execution
+ceiling, never a leaderboard entry.
 
 ## Results
 
-Reference controller, Panda, train seeds 0–9, 12,000 steps, 2026-09-10, sources
-at commit `8f560f4` plus the controller changes logged in
-[results/LOG.md](results/LOG.md):
+Reference controller, Panda, train seeds 0–9 per figure on the designed scene
+grid, 15,000 steps, 2026-09-11, sources of the commit that carries this README
+(every step is logged in [results/LOG.md](results/LOG.md)):
 
-| Silhouette | Success (10 seeds) | 95% Wilson | Final IoU of successes | Time to success |
-| --- | --- | --- | --- | --- |
-| square | 3/10 | 0.11–0.60 | 0.977–0.979 | 219 s |
-| rectangle | 5/10 | 0.24–0.76 | 0.965–0.979 | 211 s |
-| house | 3/10 | 0.11–0.60 | 0.953–0.978 | 203 s |
-| cat | 4/10 | 0.17–0.69 | 0.978–0.979 | 197 s |
-| **all** | **15/40** | | | |
+| Silhouette | Success at the horizon | Sustained during the episode | 95% Wilson (horizon) | Final IoU of successes | Median time to first success |
+| --- | --- | --- | --- | --- | --- |
+| square | 10/10 | 10/10 | 0.72–1.00 | 0.970–0.979 | 209 s |
+| rectangle | 10/10 | 10/10 | 0.72–1.00 | 0.941–0.979 | 205 s |
+| house | 10/10 | 10/10 | 0.72–1.00 | 0.943–0.979 | 204 s |
+| cat | 9/10 | 9/10 | 0.60–0.98 | 0.909–0.979 | 207 s |
+| **all** | **39/40** | **39/40** | | | |
+
+"At the horizon" is the benchmark's number (`eval.py`, the test holds over the
+last 25 steps of 300 s); "sustained" is what the demonstration collector counts
+(the test held for 0.5 s at any point, after which the episode stops four
+seconds later, arm home). They agree because an accepted assembly is never
+touched again and a repair only starts when it can finish.
 | SmolVLA, dev / test | pending | | | |
 | OpenAI / Anthropic, dev | pending | | | |
 
-Successful episodes place every piece within about 1 mm. Failures, most frequent
-first: a placed piece disturbed by a later pick or place; the slab slipping out of
-the fingers during transport; IK blocked near the robot base. Every experiment,
+Successful episodes are scored at the tolerance above; most still land within
+1–2 mm (final IoU 0.95 or better in 34 of the 39). They take about 205 s of
+the 300 s horizon. The remaining failure is a slip cascade: a large triangle
+slipped out of the pinch at 52 s, later placements landed 1–2 cm off, and the
+repairs did not fit in the time left. In-pinch creep of 4–13 mm
+per carry is the physical limit of the knob grasp; carrying faster than
+0.06 m/s or stiffening the contacts both lost more assemblies than they saved. The arm never
+stands still for more than 5 s in any recorded episode: a phase that makes no
+progress for 3 s (6 s with a piece in hand) is re-planned, and after the first
+pass over the seven pieces the controller re-places any piece the success test
+rejects instead of holding; an accepted assembly is never touched again. Every experiment,
 including the negative ones, is in [results/LOG.md](results/LOG.md); summaries are
-versioned in `results/` and raw trajectories stay in `outputs/runs/`.
+committed in `results/` and raw trajectories stay in `outputs/runs/`.
 
 ## Reference
 
 - [docs/protocol.md](docs/protocol.md): the contract. Units, seeds, observation
   fields, scoring rules, artifact formats, comparison rules.
-- [docs/plan.md](docs/plan.md): state of the base, baseline choice with sources,
-  milestones and next steps.
 - `uv run view.py --result outputs/runs/x.json --episode 0` replays a saved episode
   from its recorded model and states; `uv run -m tools.history outputs/runs` builds
   a local history page next to the results.
 
 ```text
-env.py                  scene, reset, state and pixel observations, CPU/GPU physics (388 lines)
-tangram.py              piece geometry and exact scoring (156)
-shapes.py               silhouettes, certificates, splits, prompt (91)
-benchmark.py            action chunks, trajectory scoring, Wilson and paired statistics (197)
-eval.py                 seeded runner, failure accounting, result artifacts (403)
+env.py                  scene, reset, state and pixel observations, CPU/GPU physics (472 lines)
+tangram.py              piece geometry and exact scoring (247)
+shapes.py               silhouettes, certificates, splits, prompt (126)
+benchmark.py            action chunks, trajectory scoring, Wilson and paired statistics (198)
+eval.py                 seeded runner, failure accounting, result artifacts (416)
 adapters.py             local checkpoints, HTTP, OpenAI and Anthropic policies
 policy.py               the policy interface, 19 lines, holds position
-teleop.py               keyboard TCP targets through damped IK (133)
-view.py                 viewer, teleoperation, recording, replay (368)
-replay.py               episode reconstruction (51)
+teleop.py               keyboard TCP targets through damped IK (151)
+view.py                 viewer, teleoperation, recording, replay (383)
+replay.py               episode reconstruction (120)
 tools/prepare.py        robot assets at a pinned revision
 tools/collect.py        record demonstrations for one silhouette
 tools/export.py         episodes -> LeRobot v3 dataset
 tools/train.py          lerobot-train with the laptop defaults and the repo paths
 tools/results.py        verify and compare results offline
 tools/history.py        local history page
-examples/oracle.py      reference controller (338)
+tools/report.py         demonstration folders -> success, stillness and smoothness metrics
+examples/oracle.py      reference controller (630)
 examples/lerobot_policy.py  LeRobot checkpoint as a pixel policy
 examples/systems/       system files: hold, http, openai, anthropic, lerobot
 tests/                  geometry, physics, evaluation, pixels, data, viewer
-results/                versioned result summaries and the experiment log
+results/                result summaries and the experiment log, committed
 data/, checkpoints/, outputs/  demonstrations; downloaded weights; training and evaluation runs (git-ignored)
 reproduce.sh            the whole pipeline
 ```

@@ -139,7 +139,7 @@ def draw_frame(
         else (
             f"TANGRAM-BENCH | {target.title()} | 1/2/3: main camera"
             + (
-                f" | REC {len(session.recorder.frames['time'])} frames"
+                f" | REC {session.recorder.count} frames"
                 + (" SOLVED" if getattr(session, "held", False) else "")
                 if session is not None
                 else ""
@@ -200,7 +200,7 @@ class Session:
 
     def finish(self, action):
         self.recorder.flush(action)
-        if not self.recorder.frames["time"]:
+        if not self.recorder.count:
             return None
         self.directory.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now().strftime("%Y%m%d-%H%M%S")

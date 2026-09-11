@@ -215,3 +215,59 @@ def test_gripper_squeezes_a_knob_hard_enough_to_lift_any_piece(robot):
     heaviest = max(m.body(f"piece{k}").mass for k in range(7)) * 9.81
     # Two pads at friction 1.0 must hold the heaviest piece with a 3x safety factor.
     assert 2 * squeeze >= 3 * heaviest
+
+
+def test_success_tolerates_five_millimetres_per_piece_but_not_ten():
+    from shapes import solution
+    from tangram import goal, score
+
+    rng = np.random.default_rng(3)
+    outline = goal(0, "house")
+    still = np.zeros((7, 6))
+
+    def displaced(d):
+        poses = np.array(solution("house", 0), dtype=float)
+        angles = rng.uniform(0, 2 * np.pi, 7)
+        poses[:, 0] += d * np.cos(angles)
+        poses[:, 1] += d * np.sin(angles)
+        return poses
+
+    exact = score(displaced(0.0), still, outline)
+    assert exact["success"] and exact["iou"] > 0.97
+    for _ in range(20):
+        assert score(displaced(0.005), still, outline)["success"], "5 mm errors must pass"
+    failed = sum(not score(displaced(0.010), still, outline)["success"] for _ in range(20))
+    assert failed >= 16, "10 mm errors on every piece must fail almost always"
+    stray = displaced(0.0)
+    centre = np.asarray(outline).mean(axis=0)
+    away = stray[0, :2] - centre
+    stray[0, :2] += 0.03 * away / np.linalg.norm(away)  # one large triangle 3 cm out
+    result = score(stray, still, outline)
+    assert not result["success"] and result["pieces_in_goal"] == 6
+    raised = displaced(0.0)
+    raised[3, 2] += 0.006  # a slab standing 6 mm high is not on the table
+    assert not score(raised, still, outline)["success"]
+    resting = displaced(0.0)
+    resting[3, 2] += 0.003  # resting on a neighbour's 5 mm edge: within tolerance
+    assert score(resting, still, outline)["success"]
+
+
+def test_scoring_boundary_examples_from_the_audit():
+    """The 5 mm calibration is empirical: these sampled layouts sit on the wrong side of
+    a threshold. A rigid 10 mm shift of the whole square keeps the IoU near 0.9; whether
+    it passes is decided by the per-piece coverage gate, which depends on the yaw."""
+    from pathlib import Path
+
+    from shapes import solution
+    from tangram import goal, score
+
+    still = np.zeros((7, 6))
+    for name in ("audit-5mm-house-fails", "audit-5mm-rectangle-fails"):
+        with np.load(Path(__file__).with_name("data") / f"{name}.npz") as z:
+            result = score(z["pieces"], still, z["goal"])
+        assert not result["success"] and result["on_table"] and result["flat"]
+    shifted = np.array(solution("square", 0), dtype=float)
+    shifted[:, 0] += 0.010
+    result = score(shifted, still, goal(0, "square"))
+    assert 0.88 < result["iou"] < 0.93
+    assert result["success"] == (result["pieces_in_goal"] == 7)

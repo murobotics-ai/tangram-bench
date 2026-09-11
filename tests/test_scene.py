@@ -49,8 +49,9 @@ def test_packed_square_layout_and_context_framing(robot):
         assert packed.area / rectangle.area > 0.97
         sides = np.linalg.norm(np.diff(np.array(rectangle.exterior.coords), axis=0), axis=1)
         np.testing.assert_allclose(sides, SIDE - 2 * INSET, atol=1e-5)
-        assert 0.28 - 1e-5 <= packed.centroid.x <= 0.36 + 1e-5
-        assert -0.30 - 1e-5 <= packed.centroid.y <= -0.24 + 1e-5
+        # The source centre sits on the designed 3x3 grid around SOURCE_CENTER (tangram.py).
+        assert 0.33 - 0.002 <= packed.centroid.x <= 0.39 + 0.002
+        assert -0.33 - 0.002 <= packed.centroid.y <= -0.27 + 0.002
         for i, p in enumerate(outlines):
             assert all(p.distance(q) >= 2 * INSET - 1e-5 for q in outlines[i + 1 :])
         np.testing.assert_allclose(obs["pieces"][:, 2], THICKNESS / 2, atol=0.001)
