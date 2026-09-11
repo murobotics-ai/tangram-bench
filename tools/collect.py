@@ -24,8 +24,11 @@ Every launch is a round: its episodes go to `<out>/<YYYY-MM-DD-HH-MM-SS>/`
 newest round (or the one named by `--round`) with `--episodes` more seeds,
 starting after the last seed the round lists, the way `lerobot-record
 --resume` grows a dataset; `--offset` overrides the start and seeds whose file
-already exists are skipped, so a round can be topped up or retried
-indefinitely. `tools.export` and
+already exists are skipped, so a round can be topped up indefinitely. A failed
+episode is listed in the index without a file and the arm moves on; since a
+seed is deterministic, rerunning it only pays after the demonstrator changed,
+which is what `--retry-failed` does for every such seed of a round.
+`tools.export` and
 `tools.report` take the figure folder and read every round in it, the newest
 copy of a seed winning; `view.py --demo <round>/episode-SEED.npz` replays one.
 
@@ -810,6 +813,12 @@ def main(argv=None):
         help="Continue the newest round of --out (or the one named by --round) with --episodes "
         "more seeds, starting after the last seed it lists; --offset overrides the start",
     )
+    p.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Record only the seeds the round lists without a file (failed or lost attempts); "
+        "uses the newest round unless --round names one and ignores --episodes",
+    )
     p.add_argument("--keep-failures", action="store_true")
     p.add_argument(
         "--full-horizon", action="store_true", help="Do not stop early after a held success"
@@ -840,7 +849,7 @@ def main(argv=None):
     if CONTROL_HZ % args.fps:
         p.error(f"fps must divide the {CONTROL_HZ} Hz control rate")
     figure = args.out or Path("data") / args.target
-    if args.resume:
+    if args.resume or args.retry_failed:
         out = figure / args.round if args.round else latest_round(figure)
         if out is None or not out.is_dir():
             p.error(f"nothing to resume in {figure}")
@@ -852,15 +861,20 @@ def main(argv=None):
     offset = args.offset
     if offset is None:  # Resuming: the next seeds after the ones the round already lists.
         offset = max(done) + 1 - base if args.resume and done else 0
-    print(json.dumps({"round": str(out), "recorded": len(done), "first_seed": base + offset}))
     args.policy = args.policy.resolve()
     seeds, skipped = [], 0
-    for seed in range(base + offset, base + offset + args.episodes):
-        if (out / f"episode-{seed}.npz").exists():
-            print(json.dumps({"seed": seed, "skipped": "exists"}), flush=True)
-            skipped += 1
-        else:
-            seeds.append(seed)
+    if args.retry_failed:
+        # A seed is deterministic, so this only makes sense after the demonstrator changed.
+        seeds = sorted(seed for seed in done if not (out / f"episode-{seed}.npz").exists())
+        print(json.dumps({"round": str(out), "recorded": len(done), "retrying": seeds}))
+    else:
+        print(json.dumps({"round": str(out), "recorded": len(done), "first_seed": base + offset}))
+        for seed in range(base + offset, base + offset + args.episodes):
+            if (out / f"episode-{seed}.npz").exists():
+                print(json.dumps({"seed": seed, "skipped": "exists"}), flush=True)
+                skipped += 1
+            else:
+                seeds.append(seed)
     started = time.perf_counter()
     failed = False
     if not seeds:

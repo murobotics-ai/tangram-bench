@@ -142,7 +142,11 @@ files in one dated folder, each replayable on its own. `--resume` grows the
 newest round with `--episodes` more seeds, the way `lerobot-record --resume`
 grows a dataset: it starts after the last seed the round lists, `--offset`
 overrides the start, and seeds whose file already exists are skipped, so the
-same round can be topped up as many times as wanted. `tools.export` and
+same round can be topped up as many times as wanted. A failed episode is
+listed in the index without a file and the arm moves on to its next seed;
+rerunning the same seed reproduces the same failure, so `--retry-failed`, which
+records every listed seed of a round that has no file, is for after the
+demonstrator changed. `tools.export` and
 `tools.report` take the figure folder and read every round in it, the newest
 copy of a repeated seed winning; a single round works too.
 
@@ -191,7 +195,15 @@ for subtask-conditioned training), the plan and subtask annotations in
 LeRobot's `language_persistent` column exactly as `lerobot-annotate` writes
 them, and an `episodes.jsonl` sidecar with seed, silhouette, success, prompt,
 plan and the annotation segments per episode. Needs the `lerobot` extra:
-`uv sync --extra dev --extra lerobot`.
+`uv sync --extra dev --extra lerobot`. Frames stream straight into LeRobot's
+encoder threads (no PNG round trip), about 7 s per 200 s episode; the
+dataset itself is LeRobot's own format and encoder (AV1, keyframe every two
+frames). `--push --repo-id org/name` uploads the dataset to the Hub, public
+unless `--private`, with a card describing the episodes (log in first with
+`hf auth login`); the Hub's LeRobot visualizer then plays it in the browser.
+The 80-episode public sample recorded this way is
+[murobotics/tangram-bench-demos](https://huggingface.co/datasets/murobotics/tangram-bench-demos)
+(20 square, 30 rectangle, 30 house, all solved; `results/2026-09-11-hf-demos-panda.json`).
 
 ### 2. Train a policy
 

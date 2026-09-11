@@ -358,3 +358,17 @@ Every collection launch writes into its own folder, `data/<figure>/<date-time>/`
 episodes, and `--resume` grows the newest round with more seeds. Export and
 report read every round of a figure, newest copy of a seed first. No change
 to the episodes themselves.
+
+### Public demonstration sample
+
+80 episodes recorded with ten arms (20 square, 30 rectangle, 30 house; 80/80
+solved, median first success 203-204 s; `2026-09-11-hf-demos-panda.json`),
+exported with `tools.export --push` to
+[murobotics/tangram-bench-demos](https://huggingface.co/datasets/murobotics/tangram-bench-demos).
+Export now streams frames into LeRobot's encoder threads instead of writing
+PNGs first: 6.9 s per episode against 15.2 s, same videos. The recording
+format stays the collector's npz (lossless frames, piece poses, goal,
+annotations, everything the scorer and the replay need); the LeRobot dataset
+is derived from it, the way Isaac Lab and ManiSkill derive LeRobot datasets
+from their HDF5 recordings.
+

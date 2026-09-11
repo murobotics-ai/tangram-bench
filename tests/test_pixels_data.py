@@ -119,7 +119,7 @@ def test_directory_digest_tracks_every_file(tmp_path):
 
 
 @pytest.mark.skipif(not HAS_LEROBOT, reason="uv sync --extra lerobot")
-def test_export_and_lerobot_policy_round_trip(tmp_path):
+def test_export_and_lerobot_policy_round_trip(tmp_path, monkeypatch):
     from tools.export import export
 
     collect(
@@ -140,6 +140,25 @@ def test_export_and_lerobot_policy_round_trip(tmp_path):
         ]
     )
     rows = export([tmp_path / "raw"], tmp_path / "lerobot", "test/tangram", include_failures=True)
+    from tools import export as module
+
+    text = module.card(rows, "test/tangram", "prompt")
+    assert "1 episodes (1 house; 0 solved, 2 frames" in text and module.GITHUB in text
+    calls = []
+    monkeypatch.setattr(module, "push", lambda *a: calls.append(a) or "https://x")
+    module.main(
+        [
+            str(tmp_path / "raw"),
+            "--out",
+            str(tmp_path / "pushed"),
+            "--include-failures",
+            "--repo-id",
+            "org/name",
+            "--push",
+            "--private",
+        ]
+    )
+    assert calls == [(tmp_path / "pushed", "org/name", calls[0][2], "prompt", True)]
     info = json.loads((tmp_path / "lerobot" / "meta" / "info.json").read_text())
     assert rows[0]["frames"] == 2 and info["fps"] == 10
     assert rows[0]["subtasks"] == [{"frame": 0, "text": ""}] and rows[0]["plan"] == []
@@ -443,6 +462,18 @@ def test_each_launch_is_a_dated_round_and_tools_read_every_round(tmp_path, capsy
         f"episode-{i}.npz" for i in range(4)
     ]
     assert [r["seed"] for r in index_rows(out)] == [0, 1, 2, 3]
+    # --retry-failed records only the listed seeds without a file: seed 5 failed
+    # (policy.py never solves and the file is not kept), a solving policy is then
+    # "the fix", and afterwards nothing is left to retry.
+    collect([*common[:-1], "--episodes", "1", "--out", str(out), "--resume", "--offset", "5"])
+    assert not (out / "9999-01-01-00-00-00" / "episode-5.npz").exists()
+    capsys.readouterr()
+    collect([*common, "--out", str(out), "--retry-failed"])
+    first = json.loads(capsys.readouterr().out.splitlines()[0])
+    assert first["retrying"] == [5] and (out / "9999-01-01-00-00-00" / "episode-5.npz").exists()
+    assert [r["seed"] for r in index_rows(out)] == [0, 1, 2, 3, 5]
+    collect([*common, "--out", str(out), "--retry-failed"])
+    assert json.loads(capsys.readouterr().out.splitlines()[0])["retrying"] == []
     # --offset overrides the start; --resume with no round is an error.
     collect([*common, "--episodes", "1", "--out", str(out), "--resume", "--offset", "7"])
     assert (out / "9999-01-01-00-00-00" / "episode-7.npz").exists()
