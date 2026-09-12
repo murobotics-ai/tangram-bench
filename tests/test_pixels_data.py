@@ -142,23 +142,27 @@ def test_export_and_lerobot_policy_round_trip(tmp_path, monkeypatch):
     rows = export([tmp_path / "raw"], tmp_path / "lerobot", "test/tangram", include_failures=True)
     from tools import export as module
 
-    text = module.card(rows, "test/tangram", "prompt")
-    assert "1 episodes (1 house; 0 solved, 2 frames" in text and module.GITHUB in text
+    text = module.card(rows, "panda", 10, "prompt")
+    assert "| Episodes | 1 (0 solved) |" in text and "| house | 1 | 0 | " in text
+    assert module.GITHUB in text and "| Frames | 2 at 10 fps" in text
+    items, robot = module.scan([tmp_path / "raw"], include_failures=True)
+    assert robot == "panda" and module.dataset_name(items, robot) == "tangram-house-panda-1ep"
+    assert module.dataset_name(items, robot, "subtask") == "tangram-house-panda-subtask-1ep"
+    assert module.scan([tmp_path / "raw"])[0] == []  # the episode failed
     calls = []
     monkeypatch.setattr(module, "push", lambda *a: calls.append(a) or "https://x")
+    monkeypatch.chdir(tmp_path)
     module.main(
-        [
-            str(tmp_path / "raw"),
-            "--out",
-            str(tmp_path / "pushed"),
-            "--include-failures",
-            "--repo-id",
-            "org/name",
-            "--push",
-            "--private",
-        ]
+        [str(tmp_path / "raw"), "--include-failures", "--push", "--private", "--namespace", "org"]
     )
-    assert calls == [(tmp_path / "pushed", "org/name", calls[0][2], "prompt", True)]
+    out = tmp_path / "data" / "lerobot" / "tangram-house-panda-1ep"
+    assert calls[0][0].resolve() == out and calls[0][1:] == (
+        "org/tangram-house-panda-1ep",
+        calls[0][2],
+        "prompt",
+        True,
+    )
+    assert (out / "episodes.jsonl").exists()
     info = json.loads((tmp_path / "lerobot" / "meta" / "info.json").read_text())
     assert rows[0]["frames"] == 2 and info["fps"] == 10
     assert rows[0]["subtasks"] == [{"frame": 0, "text": ""}] and rows[0]["plan"] == []

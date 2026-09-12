@@ -1,0 +1,1 @@
+{"type": "agent", "provider": "openai", "model_env": "TANGRAM_OPENAI_MODEL", "api_key_env": "OPENAI_API_KEY", "chunk_size": 25, "max_calls": 80, "image_horizon": 2, "speed": 0.06, "timeout_seconds": 180, "max_output_tokens": 4096, "effort": "medium", "use_prompt": true, "use_state": false, "use_images": true}

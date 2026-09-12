@@ -113,7 +113,8 @@ the source tree:
 ```text
 data/<figure>/<round>/     demonstrations, one npz per episode, one round folder per
                            launch named by its date and time      tools.collect, view.py --record
-data/lerobot/train/        exported LeRobot dataset                tools.export
+data/lerobot/<name>/       exported LeRobot dataset, named after its content
+                           unless --out says otherwise               tools.export
 checkpoints/               pretrained weights from the Hub         tools.train, first run
 outputs/train/<name>/      fine-tuning runs; checkpoints/last/pretrained_model is what eval loads
 outputs/runs/<name>.json   evaluation results; trajectories in <name>.artifacts/   eval.py
@@ -198,11 +199,16 @@ plan and the annotation segments per episode. Needs the `lerobot` extra:
 `uv sync --extra dev --extra lerobot`. Frames stream straight into LeRobot's
 encoder threads (no PNG round trip), about 7 s per 200 s episode; the
 dataset itself is LeRobot's own format and encoder (AV1, keyframe every two
-frames). `--push --repo-id org/name` uploads the dataset to the Hub, public
-unless `--private`, with a card describing the episodes (log in first with
-`hf auth login`); the Hub's LeRobot visualizer then plays it in the browser.
+frames). Without `--out` and `--repo-id` the dataset is named after its
+content, `tangram-<figures>-<robot>[-subtask]-<N>ep`, and written to
+`data/lerobot/<name>`. `--push` uploads it to the Hub as
+`<namespace>/<name>` (`--namespace murobotics`; default the logged-in user),
+public unless `--private`, with a card that tabulates episodes, frames, fps,
+figures, prompts and fields and explains how the episodes were recorded (log
+in first with `hf auth login`); the Hub's LeRobot visualizer then plays it in
+the browser.
 The 80-episode public sample recorded this way is
-[murobotics/tangram-bench-demos](https://huggingface.co/datasets/murobotics/tangram-bench-demos)
+[murobotics/tangram-square-rectangle-house-panda-80ep](https://huggingface.co/datasets/murobotics/tangram-square-rectangle-house-panda-80ep)
 (20 square, 30 rectangle, 30 house, all solved; `results/2026-09-11-hf-demos-panda.json`).
 
 ### 2. Train a policy
@@ -273,6 +279,32 @@ response and token count next to the trajectory (never the key). Keep
 control steps at chunk 25 is 120 calls. Set `chunk_size` in the system file to
 match. These runs cost real money; the audit sidecar reports token usage so the
 bill is predictable.
+
+Asking a language model for joint angles every tick is the harshest possible
+contract, so a second adapter, `agent.py`, gives the model a tool-calling
+interface instead: the model sees the tool pose, the gripper opening
+and both cameras, and answers with exactly one tool call, `move_to` or
+`move_by` with a note explaining the motion, or `done` / `give_up` with what it
+wishes it had known. The adapter interpolates the tool point at 0.06 m/s
+(0.03 m/s when descending with the gripper closed, so the piece does not creep
+out of the pinch), solves the damped IK of `teleop.py` for every control tick
+and emits ordinary joint chunks; unreachable targets are rejected with the IK residual and three
+rejections in a row are a policy error. The notes land in the trajectory as
+`subtask`, so `view.py` shows what the model said it saw while it moved.
+
+```bash
+uv run eval.py --system examples/systems/agent-anthropic.json --obs pixels --max-chunk 25 \
+    --episodes 3 --out outputs/runs/agent-anthropic-dev.json
+uv run eval.py --system examples/systems/agent-openai.json --obs pixels --max-chunk 25 \
+    --episodes 3 --out outputs/runs/agent-openai-dev.json
+```
+
+The budget is `max_calls` tool calls per episode (80 by default; a piece takes
+about eight) and the full 300 s horizon, during which simulated time waits for
+the model. `use_state: true` adds the piece poses and the goal outline to the
+text and records `access = "state"`; by default the model gets proprioception
+and pixels only. `inference_calls` in the result counts policy queries, one per
+chunk; `policy_usage.requests` counts the model calls.
 
 ## Reference controller
 
@@ -346,6 +378,7 @@ shapes.py               silhouettes, certificates, splits, prompt (126)
 benchmark.py            action chunks, trajectory scoring, Wilson and paired statistics (198)
 eval.py                 seeded runner, failure accounting, result artifacts (416)
 adapters.py             local checkpoints, HTTP, OpenAI and Anthropic policies
+agent.py                tool-calling language-model agent: Cartesian targets, IK, one call per turn (649)
 policy.py               the policy interface, 19 lines, holds position
 teleop.py               keyboard TCP targets through damped IK (151)
 view.py                 viewer, teleoperation, recording, replay (388)
@@ -359,7 +392,7 @@ tools/history.py        local history page
 tools/report.py         demonstration folders -> success, stillness and smoothness metrics
 examples/oracle.py      reference controller (630)
 examples/lerobot_policy.py  LeRobot checkpoint as a pixel policy
-examples/systems/       system files: hold, http, openai, anthropic, lerobot
+examples/systems/       system files: hold, http, openai, anthropic, agent-openai, agent-anthropic, lerobot
 tests/                  geometry, physics, evaluation, pixels, data, viewer
 results/                result summaries and the experiment log, committed
 data/, checkpoints/, outputs/  demonstrations; downloaded weights; training and evaluation runs (git-ignored)

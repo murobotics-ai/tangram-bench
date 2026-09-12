@@ -1,7 +1,12 @@
 """Convert recorded episode folders into one LeRobot v3 dataset.
 
-Usage: uv run -m tools.export data/square data/rectangle data/house --out data/lerobot/train
-       uv run -m tools.export data/cat --out data/lerobot/test --repo-id tangram/test
+Usage: uv run -m tools.export data/square data/rectangle data/house
+       uv run -m tools.export data/house --push --namespace murobotics
+
+Without `--out` and `--repo-id` the dataset is named after its content,
+`tangram-<figures>-<robot>[-subtask]-<N>ep` (for example
+`tangram-square-rectangle-house-panda-80ep`), written to `data/lerobot/<name>`
+and, on the Hub, `<namespace>/<name>`.
 
 A folder may be a figure folder (every round inside it is read, the newest
 copy of a repeated seed wins) or one round. `--push` uploads the dataset to
@@ -38,6 +43,37 @@ def episode_files(folder):
     for path in sorted(Path(folder).rglob("episode-*.npz")):
         newest[path.name] = path
     return sorted(newest.values())
+
+
+def scan(folders, include_failures=False):
+    """(path, figure, success) per episode file, reading only the small arrays, plus
+    the robot: enough to name the dataset before any frame is decoded."""
+    items, robot = [], None
+    for folder in folders:
+        for path in episode_files(folder):
+            with np.load(path, allow_pickle=False) as data:
+                success = bool(data["success"])
+                robot = robot or str(data["robot"])
+                if include_failures or success:
+                    items.append((path, str(data["target"]), success))
+    return items, robot
+
+
+def dataset_name(items, robot, task="prompt"):
+    """`tangram-<figures>-<robot>[-subtask]-<N>ep`, figures in order of appearance."""
+    figures = []
+    for _, figure, _ in items:
+        if figure not in figures:
+            figures.append(figure)
+    return "-".join(
+        [
+            "tangram",
+            *figures,
+            robot or "robot",
+            *(["subtask"] if task == "subtask" else []),
+            f"{len(items)}ep",
+        ]
+    )
 
 
 def episodes(folders, include_failures=False):
@@ -214,29 +250,65 @@ def export(folders, out, repo_id, include_failures=False, overwrite=False, task=
 GITHUB = "https://github.com/murobotics-ai/tangram-bench"
 
 
-def card(rows, repo_id, task):
-    """Dataset card text: what the episodes are and how they were recorded."""
-    counts = {}
+def card(rows, robot, fps, task):
+    """Markdown for the card's description: a summary table, one row per figure,
+    how the episodes were recorded and what each field holds."""
+    figures = {}
     for row in rows:
-        counts[row["target"]] = counts.get(row["target"], 0) + 1
-    successes = sum(r["success"] for r in rows)
+        f = figures.setdefault(
+            row["target"], {"episodes": 0, "solved": 0, "frames": 0, "prompt": ""}
+        )
+        f["episodes"] += 1
+        f["solved"] += int(row["success"])
+        f["frames"] += int(row["frames"])
+        f["prompt"] = f["prompt"] or row["prompt"]
+    episodes, solved = len(rows), sum(r["success"] for r in rows)
     frames = sum(r["frames"] for r in rows)
-    figures = ", ".join(f"{n} {name}" for name, n in counts.items())
-    return (
-        f"Demonstrations for [Tangram-Bench]({GITHUB}), a MuJoCo benchmark where a Franka "
-        "Panda assembles a tangram silhouette from a packed square of seven pieces. "
-        f"{len(rows)} episodes ({figures}; {successes} solved, {frames} frames at 10 fps), "
-        "recorded in simulation by the repository's reference controller on the benchmark's "
-        "designed scenes (goal yaw on a 30 degree grid, source yaw on a 45 degree grid, "
-        "centres offset by up to 30 mm). Each frame holds the top and wrist cameras "
-        "(320x240), the nine joint positions as state, the commanded joint targets and "
-        "gripper as action, and the figure prompt as task"
+    minutes = frames / fps / 60
+    lines = [
+        f"Demonstrations for [Tangram-Bench]({GITHUB}): a {robot.capitalize()} arm in MuJoCo "
+        "assembles a tangram silhouette from a packed square of seven pieces, given the "
+        "silhouette outline on the table and a one-sentence prompt.",
+        "",
+        "| | |",
+        "|---|---|",
+        f"| Episodes | {episodes} ({solved} solved) |",
+        f"| Frames | {frames:,} at {fps} fps, {minutes:.0f} min of manipulation |",
+        f"| Figures | {', '.join(figures)} |",
+        f"| Robot | {robot}, simulated (MuJoCo) |",
+        "| Cameras | `observation.images.top`, `observation.images.wrist`, 320x240 |",
+        "| State | `observation.state`: 7 arm joints and 2 finger joints, rad and m |",
+        "| Action | `action`: 7 joint targets in rad and a gripper command, 1 open, 0 closed |",
+        "| Task | the figure prompt"
         + (" followed by the current subtask" if task == "subtask" else "")
-        + ". The `language_persistent` column carries the demonstrator's numbered plan "
-        "and the per-frame subtask sentence; `episodes.jsonl` lists seed, figure, success, "
-        "prompt, plan and subtask segments per episode. A seed fixes the scene, so any "
-        f"episode can be reproduced with `tools.collect` at {GITHUB}."
-    )
+        + " |",
+        "| Demonstrator | the repository's reference controller, one seed per episode |",
+        "",
+        "| Figure | Episodes | Solved | Prompt |",
+        "|---|---|---|---|",
+        *(
+            f"| {name} | {f['episodes']} | {f['solved']} | {f['prompt']} |"
+            for name, f in figures.items()
+        ),
+        "",
+        "### How the episodes were recorded",
+        "",
+        "Scenes come from the benchmark's designed grid: goal yaw every 30 degrees, packed "
+        "square yaw every 45 degrees, centres offset by up to 30 mm, all inside the arm's "
+        "workspace. A seed fixes the scene and the demonstrator, so any episode reproduces "
+        "exactly with `tools.collect` in the repository; `episodes.jsonl` maps each "
+        "episode index to its seed, figure, success, prompt, plan and subtask segments. An "
+        "episode ends four seconds after the benchmark's success test has held, once the "
+        "arm has returned home.",
+        "",
+        "### Language annotations",
+        "",
+        "`language_persistent` carries the demonstrator's numbered plan (refreshed at every "
+        "step) and the subtask sentence in progress, in the layout `lerobot-annotate` "
+        "writes; `language_events` is empty.",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def push(out, repo_id, rows, task="prompt", private=False):
@@ -248,7 +320,7 @@ def push(out, repo_id, rows, task="prompt", private=False):
         tags=["tangram", "mujoco", "franka", "simulation", "manipulation"],
         license="mit",
         private=private,
-        dataset_description=card(rows, repo_id, task),
+        dataset_description=card(rows, dataset.meta.robot_type, dataset.fps, task),
         url=GITHUB,
     )
     return f"https://huggingface.co/datasets/{repo_id}"
@@ -259,8 +331,18 @@ def main(argv=None):
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
     p.add_argument("folders", nargs="+", type=Path, help="Episode folders from tools/collect.py")
-    p.add_argument("--out", type=Path, required=True, help="LeRobot dataset root")
-    p.add_argument("--repo-id", default="tangram-bench/local", help="Name stored in the dataset")
+    p.add_argument(
+        "--out",
+        type=Path,
+        help="LeRobot dataset root; default data/lerobot/<name>, with <name> "
+        "tangram-<figures>-<robot>[-subtask]-<N>ep from the episodes themselves",
+    )
+    p.add_argument("--repo-id", help="Dataset id on the Hub; default <namespace>/<name>")
+    p.add_argument(
+        "--namespace",
+        help="Hub user or organisation for the default --repo-id; with --push, default the "
+        "logged-in user",
+    )
     p.add_argument("--include-failures", action="store_true")
     p.add_argument("--overwrite", action="store_true")
     p.add_argument(
@@ -278,6 +360,16 @@ def main(argv=None):
         "or the prompt followed by the per-frame subtask, for subtask-conditioned training",
     )
     args = p.parse_args(argv)
+    items, robot = scan(args.folders, args.include_failures)
+    name = dataset_name(items, robot, args.task)
+    args.out = args.out or Path("data") / "lerobot" / name
+    if args.repo_id is None:
+        namespace = args.namespace
+        if namespace is None and args.push:
+            from huggingface_hub import HfApi
+
+            namespace = HfApi().whoami()["name"]
+        args.repo_id = f"{namespace}/{name}" if namespace else name
     if args.push and args.out.exists() and not args.overwrite:
         # Push what an earlier export left here (its episodes.jsonl carries the rows).
         rows = [json.loads(line) for line in (args.out / "episodes.jsonl").read_text().splitlines()]
@@ -293,6 +385,7 @@ def main(argv=None):
         "frames": sum(r["frames"] for r in rows),
         "per_target": counts,
         "out": str(args.out),
+        "repo_id": args.repo_id,
     }
     if args.push:
         summary["url"] = push(args.out, args.repo_id, rows, args.task, args.private)

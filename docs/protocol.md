@@ -177,7 +177,29 @@ from `model_env`; API keys are read from environment variables, loaded from a
 git-ignored `.env` at the repository root if present (shell values win), and never
 included in transcripts. Rate limits and server errors are retried up to
 `retries` times (default 3) honouring `Retry-After`; refusals, truncated output
-and malformed JSON are policy errors. Authenticated provider availability depends
+and malformed JSON are policy errors.
+
+The `agent` type (`agent.py`, Panda only) is the tool-calling contract: each
+turn the model receives the tool point pose, the gripper opening, the last tool
+result and the cameras (only the newest `image_horizon` observations keep their
+images in the request), and must answer with exactly one tool call. `move_to`
+(x, y, z in metres, yaw in degrees, gripper 0..1, note) and `move_by`
+(displacements) are interpolated from the observed pose at `speed` m/s (default
+0.06; descents with the gripper closed at `lower_speed`, default 0.03, since
+faster ones creep the slab 15-20 mm out of the pinch) and `turn_speed` deg/s,
+one damped-IK solve per control tick with the hand pointing down; the gripper column interpolates from its last command
+(fingers closed on a knob read 0.25 open, and a command of 0.25 would let go);
+the resulting joint chunk goes through the ordinary
+validation and slew limit, handed out `chunk_size` actions per policy query.
+Targets are clamped to a workspace box and the clamp is reported; a target the
+IK cannot reach within 4 mm and 2° is rejected with the residual; a turn without
+a tool call is nudged once; three rejections or misses in a row are a policy
+error. `done` and `give_up` record a hindsight sentence and hold the last
+command for the rest of the horizon; exhausting `max_calls` (default 80) is a
+forced `give_up`. The move notes are recorded per tick as `subtask`. The audit
+sidecar keeps every request with images replaced by digests, every reply, the
+tool results and the stop record. `use_state` (default false) adds piece poses
+and the goal outline to the text and sets `access = "state"`. Authenticated provider availability depends
 on the user's account; automated adapter tests use mocked responses.
 
 `--max-inference-calls` defaults to the horizon (15,000) per episode. Exhaustion is a failed

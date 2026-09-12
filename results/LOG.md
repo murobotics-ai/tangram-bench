@@ -364,11 +364,31 @@ to the episodes themselves.
 80 episodes recorded with ten arms (20 square, 30 rectangle, 30 house; 80/80
 solved, median first success 203-204 s; `2026-09-11-hf-demos-panda.json`),
 exported with `tools.export --push` to
-[murobotics/tangram-bench-demos](https://huggingface.co/datasets/murobotics/tangram-bench-demos).
+[murobotics/tangram-square-rectangle-house-panda-80ep](https://huggingface.co/datasets/murobotics/tangram-square-rectangle-house-panda-80ep).
 Export now streams frames into LeRobot's encoder threads instead of writing
-PNGs first: 6.9 s per episode against 15.2 s, same videos. The recording
+PNGs first: 6.9 s per episode against 15.2 s, same videos. Datasets are named
+after their content unless told otherwise (this one was renamed to the
+automatic name; the old id redirects), and the card is a set of tables. The recording
 format stays the collector's npz (lossless frames, piece poses, goal,
 annotations, everything the scorer and the replay need); the LeRobot dataset
 is derived from it, the way Isaac Lab and ManiSkill derive LeRobot datasets
 from their HDF5 recordings.
+
+### Tool-calling agent adapter
+
+`agent.py` adds the `agent` system type: a language model drives the arm the
+way Robocurve's Inspect Robots agent does, one `move_to` / `move_by` / `done` /
+`give_up` tool call per turn, the adapter interpolating the tool point at
+0.06 m/s and solving the IK per tick. Review found one bug before any paid
+run: the gripper interpolated from the measured opening, and fingers closed on
+the 2 cm knob read 0.25, so every carry began by commanding 0.25 and the piece
+fell at the first horizontal motion (three pieces, three drops). Interpolating
+from the last command fixed the drop. The second finding was the landing
+error: 25-30 mm after a carry, all of it gained during the 0.06 m/s descent
+(piece-tool offset 2 mm after the carry, 20 mm after the descent). Capping
+descents with a closed gripper at 0.03 m/s, the reference controller's
+LOWER_SPEED, brings it to 6-7 mm. The prompt's recipe now lifts a piece to
+12 cm, carries it 25 cm and lands it flat 7 mm off the point; a test follows
+the recipe end to end.
+No model has been run yet; the eleven-finding audit style applies here too.
 

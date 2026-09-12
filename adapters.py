@@ -7,7 +7,9 @@ through each provider's structured-output feature. Keys and model IDs come from
 the environment or from a `.env` file at the repository root, never from the
 system file. Requests, responses and token usage are logged beside the
 trajectory; the key is not. No provider SDK is required: both APIs are plain
-HTTPS with JSON, so the whole contract is visible in this file.
+HTTPS with JSON, so the whole contract is visible in this file. The `agent`
+type (`agent.py`) is the tool-calling variant: Cartesian targets, one tool
+call per turn, the adapter interpolates and solves the IK.
 """
 
 import base64
@@ -67,8 +69,8 @@ def system_config(path):
     """Resolve declared local paths before hashing and constructing a system."""
     path = Path(path)
     config = json.loads(path.read_text())
-    if config.get("type") not in ("local", "http", "openai", "anthropic"):
-        raise ValueError("System type must be local, http, openai or anthropic")
+    if config.get("type") not in ("local", "http", "openai", "anthropic", "agent"):
+        raise ValueError("System type must be local, http, openai, anthropic or agent")
     if "api_key" in config:
         raise ValueError("Use api_key_env, not a literal API key in the system file")
     config.setdefault("kwargs", {})
@@ -93,6 +95,10 @@ def policy_factory(config):
         if "checkpoint" in config:
             kwargs["checkpoint"] = config["checkpoint"]
         return lambda robot, seed: cls(robot=robot, seed=seed, **kwargs)
+    if config["type"] == "agent":
+        from agent import AgentPolicy
+
+        return lambda robot, seed: AgentPolicy(robot, seed, config)
     return lambda robot, seed: RemotePolicy(robot, seed, config)
 
 
