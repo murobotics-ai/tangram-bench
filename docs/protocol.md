@@ -44,35 +44,37 @@ Nothing in a scene is drawn at random. A seed indexes a documented grid
 (`tangram.layout`), so the coverage of a dataset can be stated exactly and
 the dev split can ask for rotations never seen in training:
 
-- goal silhouette yaw: 12 values on a 30° grid, seed n takes n mod 12;
-  the dev split adds 15°, half a step, so its rotations lie between the
-  training ones and never equal one; the test split (cat) uses the 30° grid;
+- goal silhouette yaw: 12 values on a 30° grid; the dev split adds 15°, half
+  a step, so its rotations lie between the training ones and never equal one;
+  the test split (cat) uses the 30° grid;
 - goal centre: (0.35, 0.28) m for the square and (0.35, 0.31) m for the other
-  figures, plus one of a 3×3 grid of offsets, −15, 0, +15 mm in x and y,
-  index (5n) mod 9;
-- packed square yaw: 8 values on a 45° grid, index (3n) mod 8;
-- packed square centre: (0.36, −0.30) m plus a 3×3 grid of −30, 0, +30 mm,
-  index (7n + 2) mod 9.
+  figures, plus one of a 3×3 grid of offsets, −10, 0, +10 mm in x and y;
+- packed square yaw: 8 values on a 45° grid;
+- packed square centre: (0.36, −0.30) m plus a 3×3 grid of −30, 0, +30 mm.
+
+The four grids make 12 × 9 × 8 × 9 = 7,776 scenes per figure and split.
+Within a split, seed n names combination (1291 n) mod 7776 in mixed radix
+(goal yaw, goal offset, source yaw, source offset), so 7,776 consecutive seeds
+are 7,776 distinct scenes covering every combination exactly once, any 12
+consecutive seeds cover all 12 goal yaws, consecutive seeds change every grid
+at once, and seed n + 7776 repeats seed n.
 
 Workspace: with these centres every piece centre, at the source and at the
-goal, lies between 0.28 m and 0.66 m from the robot base in every designed
-scene (`tangram.WORKSPACE`, checked by a test over the train and dev grids).
+goal, lies between 0.28 m and 0.66 m from the robot base in every one of the
+7,776 designed scenes (`tangram.WORKSPACE`, checked by a test over the whole
+train and dev grids; the rectangle's longest diagonal leaves 5 mm at its
+tightest yaw, which is why the goal offsets are ±10 mm and not larger).
 Closer than 0.28 m the elbow folds against its stop and the forearm meets the
 shoulder column, which is where the reference controller used to fail.
 
-The strides are coprime to the grid sizes, so 60 consecutive seeds visit every
-value of every grid. The four indices advance on the same seed counter, so
-the joint sequence has period lcm(12, 9, 8, 9) = 72: each split holds 72
-distinct scenes per figure, seeds 0–71 cover them all, and seed n + 72 is
-the same scene as seed n (an episode there differs only through the
-demonstrator's own randomness, if any). More than 72 seeds per figure
-therefore repeat scenes; the seed-to-scene map stays fixed so results remain
-comparable. Each recorded episode and evaluation row stores the scene
+Each recorded episode and evaluation row stores the scene
 in degrees and millimetres (`goal_yaw_deg`, `goal_center_mm`,
 `source_yaw_deg`, `source_center_mm`). `tools.collect --goal-yaw` and
 `--source-yaw` force a value for every seed, recorded the same way, for
-targeted datasets. Scenes recorded before this design (2026-09-11) used
-uniform random yaws and offsets and are not comparable.
+targeted datasets. Two earlier designs are not comparable with this one:
+before 2026-09-11 yaws and offsets were uniform random, and on 2026-09-11 the
+four grid indices advanced on one seed counter with ±15 mm goal offsets, which
+repeated the joint scene every 72 seeds.
 
 ## Physics and horizon
 

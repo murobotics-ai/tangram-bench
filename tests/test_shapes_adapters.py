@@ -258,23 +258,34 @@ def test_scene_design_is_a_documented_grid_indexed_by_seed():
     import numpy as np
 
     from benchmark import SPLITS
-    from tangram import GOAL_OFFSETS, SOURCE_OFFSETS, SPLIT_SIZE, describe_layout, layout
+    from tangram import GOAL_OFFSETS, SCENES, SOURCE_OFFSETS, SPLIT_SIZE, describe_layout, layout
 
     assert SPLITS == {"train": 0, "dev": SPLIT_SIZE, "test": 2 * SPLIT_SIZE}
-    train = [describe_layout(layout(n, "house")) for n in range(60)]
+    key = lambda s: json.dumps(s, sort_keys=True)  # noqa: E731
+    train = [describe_layout(layout(n, "house")) for n in range(SCENES)]
+    # 7776 consecutive seeds are 7776 distinct scenes: every combination exactly once,
+    # then seed 7776 repeats seed 0.
+    assert SCENES == 7776 and len({key(s) for s in train}) == SCENES
+    assert key(describe_layout(layout(SCENES, "house"))) == key(train[0])
     assert {s["goal_yaw_deg"] for s in train} == {30.0 * k for k in range(12)}
     assert {s["source_yaw_deg"] for s in train} == {45.0 * k for k in range(8)}
     assert len({tuple(s["goal_center_mm"]) for s in train}) == len(GOAL_OFFSETS)
     assert len({tuple(s["source_center_mm"]) for s in train}) == len(SOURCE_OFFSETS)
+    # Any 12 consecutive seeds cover the 12 goal yaws; consecutive seeds change every grid.
+    assert {s["goal_yaw_deg"] for s in train[5:17]} == {30.0 * k for k in range(12)}
+    assert all(
+        train[n]["source_yaw_deg"] != train[n + 1]["source_yaw_deg"]
+        or train[n]["source_center_mm"] != train[n + 1]["source_center_mm"]
+        for n in range(200)
+    )
     # Dev rotations fall exactly between the training ones; the test split reuses the grid.
     dev = {describe_layout(layout(SPLITS["dev"] + n, "cat"))["goal_yaw_deg"] for n in range(60)}
     assert dev == {15.0 + 30.0 * k for k in range(12)}
-    assert describe_layout(layout(SPLITS["test"] + 3, "cat"))["goal_yaw_deg"] == 90.0
+    assert (
+        describe_layout(layout(SPLITS["test"] + 3, "cat"))["goal_yaw_deg"]
+        == (describe_layout(layout(3, "cat"))["goal_yaw_deg"])
+    )
     assert layout(7, "square")["goal_yaw"] == layout(7, "square")["goal_yaw"]  # deterministic
-    # The joint sequence has period 72: 72 distinct scenes, then seed 72 repeats seed 0.
-    key = lambda s: json.dumps(s, sort_keys=True)  # noqa: E731
-    scenes = [key(describe_layout(layout(n, "house"))) for n in range(72)]
-    assert len(set(scenes)) == 72 and key(describe_layout(layout(72, "house"))) == scenes[0]
     assert np.allclose(
         layout(7, "square")["goal_center"] - layout(7, "house")["goal_center"], [0, -0.03]
     )
@@ -314,11 +325,11 @@ def test_scene_override_is_applied_and_recorded(tmp_path):
 
 def test_every_designed_scene_keeps_the_pieces_inside_the_workspace():
     from benchmark import SPLITS
-    from tangram import WORKSPACE, layout, piece_radii
+    from tangram import SCENES, WORKSPACE, layout, piece_radii
 
     for target in ("square", "rectangle", "house", "cat"):
         for base in (SPLITS["train"], SPLITS["dev"], SPLITS["test"]):
-            for n in range(60):
+            for n in range(60 if base == SPLITS["test"] else SCENES):
                 radii = piece_radii(layout(base + n, target), target)
                 assert radii.min() >= WORKSPACE[0] and radii.max() <= WORKSPACE[1], (
                     target,

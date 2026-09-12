@@ -33,10 +33,10 @@ pending (see [Results](#results)).
 - **Start.** The pieces are packed as a square; its yaw comes from a 45° grid
   and its centre from a 3×3 grid of ±3 cm, both indexed by the seed.
 - **Goal.** A silhouette drawn on the table, yaw on a 30° grid and centre on a
-  3×3 grid of ±1.5 cm, again indexed by the seed: 72 distinct scenes per
-  figure and split, seeds 0–71, after which the sequence repeats, so a
-  dataset's coverage is a statement, not a sample (see the protocol's scene
-  design). Every piece stays
+  3×3 grid of ±1 cm, again indexed by the seed: 7,776 distinct scenes per
+  figure and split, consecutive seeds never repeating one, so a dataset's
+  coverage is a statement, not a sample (see the protocol's scene design).
+  Every piece stays
   between 0.28 and 0.66 m from the base, the arm's comfortable field: square,
   rectangle or the classic tangram house (body, roof, chimney) for training, and
   the **cat**, which no policy trains on. The policy also gets a text prompt.
@@ -209,9 +209,6 @@ public unless `--private`, with a card that tabulates episodes, frames, fps,
 figures, prompts and fields and explains how the episodes were recorded (log
 in first with `hf auth login`); the Hub's LeRobot visualizer then plays it in
 the browser.
-The 80-episode public sample recorded this way is
-[murobotics/tangram-square-rectangle-house-panda-80ep](https://huggingface.co/datasets/murobotics/tangram-square-rectangle-house-panda-80ep)
-(20 square, 30 rectangle, 30 house, all solved; `results/2026-09-11-hf-demos-panda.json`).
 
 ### 2. Train a policy
 
@@ -331,34 +328,37 @@ ceiling, never a leaderboard entry.
 
 ## Results
 
-Reference controller, Panda, train seeds 0–9 per figure on the designed scene
-grid, 15,000 steps, 2026-09-11, sources of the commit that carries this README
-(every step is logged in [results/LOG.md](results/LOG.md)):
+Reference controller, Panda, consecutive train seeds from 0 on the designed
+scene grid (every seed a different scene), 15,000 steps, 2026-09-12, sources
+of the commit that carries this README (every step is logged in
+[results/LOG.md](results/LOG.md); `results/2026-09-12-oracle-panda-grid.json`):
 
-| Silhouette | Success at the horizon | Sustained during the episode | 95% Wilson (horizon) | Final IoU of successes | Median time to first success |
+| Silhouette | Seeds | Success | 95% Wilson | Final IoU of successes | Median time to first success |
 | --- | --- | --- | --- | --- | --- |
-| square | 10/10 | 10/10 | 0.72–1.00 | 0.970–0.979 | 209 s |
-| rectangle | 10/10 | 10/10 | 0.72–1.00 | 0.941–0.979 | 205 s |
-| house | 10/10 | 10/10 | 0.72–1.00 | 0.943–0.979 | 204 s |
-| cat | 9/10 | 9/10 | 0.60–0.98 | 0.909–0.979 | 207 s |
-| **all** | **39/40** | **39/40** | | | |
+| square | 102 | 100/102 | 0.93–0.99 | 0.913–0.979 | 198 s |
+| rectangle | 101 | 100/101 | 0.95–1.00 | 0.885–0.979 | 200 s |
+| house | 100 | 100/100 | 0.96–1.00 | 0.903–0.979 | 201 s |
+| cat | 40 | 39/40 | 0.87–1.00 | 0.909–0.979 | 204 s |
+| **all** | 343 | **339/343** | | | |
 
-"At the horizon" is the benchmark's number (`eval.py`, the test holds over the
-last 25 steps of 300 s); "sustained" is what the demonstration collector counts
-(the test held for 0.5 s at any point, after which the episode stops four
-seconds later, arm home). They agree because an accepted assembly is never
+Success here is what the demonstration collector counts: the test held for
+0.5 s at some point, after which the episode stops four seconds later, arm
+home. On the previous grid (2026-09-11, 10 seeds per figure) it agreed with
+the benchmark's own number, success over the last 25 steps of the 300 s
+horizon from `eval.py`, 39/40 both ways, because an accepted assembly is never
 touched again and a repair only starts when it can finish.
 | SmolVLA, dev / test | pending | | | |
 | OpenAI / Anthropic, dev | pending | | | |
 
 Successful episodes are scored at the tolerance above; most still land within
-1–2 mm (final IoU 0.95 or better in 34 of the 39). They take about 205 s of
-the 300 s horizon. The remaining failure is a slip cascade: a large triangle
-slipped out of the pinch at 52 s, later placements landed 1–2 cm off, and the
+1–2 mm (final IoU 0.95 or better in 315 of the 339). They take about 200 s of
+the 300 s horizon. The four failures all ran out of time after a slip: a
+piece slipped out of the pinch, later placements landed 1–2 cm off, and the
 repairs did not fit in the time left. In-pinch creep of 4–13 mm
 per carry is the physical limit of the knob grasp; carrying faster than
-0.06 m/s or stiffening the contacts both lost more assemblies than they saved. The arm never
-stands still for more than 5 s in any recorded episode: a phase that makes no
+0.06 m/s or stiffening the contacts both lost more assemblies than they saved. The arm
+stands still for at most 12 s in any episode (one square episode, holding the
+last piece over the goal through two stall cycles): a phase that makes no
 progress for 3 s (6 s with a piece in hand) is re-planned, and after the first
 pass over the seven pieces the controller re-places any piece the success test
 rejects instead of holding; an accepted assembly is never touched again. Every experiment,

@@ -392,3 +392,29 @@ LOWER_SPEED, brings it to 6-7 mm. The prompt's recipe now lifts a piece to
 the recipe end to end.
 No model has been run yet; the eleven-finding audit style applies here too.
 
+### Scene grid: full coverage (2026-09-12)
+
+The 2026-09-11 design advanced the four grid indices on the same seed
+counter, so the joint scene repeated every lcm(12, 9, 8, 9) = 72 seeds (found
+by counting distinct scenes in a long round's index: seeds n and n + 72 were
+identical to the frame). New mapping: seed n names combination
+(1291 n) mod 7776 in mixed radix, every combination once per 7,776 seeds,
+tested over the whole train and dev grids. The goal offsets shrink from
+±15 mm to ±10 mm because the rectangle's diagonal at yaw 240° with the
+(−15, −15) offset reached 0.279 m from the base, 1 mm inside the 0.28 m
+elbow limit; at ±10 mm every scene of every figure keeps at least 5 mm of
+margin. Seeds map to different scenes than under the previous design, so
+per-seed results before this entry are not comparable with later ones.
+
+Measured on the new grid with the collector, 100 consecutive train seeds
+per training figure (plus two square and one rectangle top-up seeds so each
+holds 100 successes) and 40 cat seeds (`2026-09-12-oracle-panda-grid.json`):
+square 100/102, rectangle 100/101, house 100/100, cat 39/40, 339/343 in all;
+median first success 198–204 s; final IoU of successes 0.885–0.979, 0.95 or
+better in 315 of 339; peak TCP acceleration 2.7–2.8 m/s² on average, 4.8 at
+most; longest still interval 11.9 s (square seed 33, holding the last piece
+over the goal through two 6 s stall cycles before the re-plan placed it). The
+four failures (square 5 and 27, rectangle 87, cat 13) are slip cascades that
+ran out of time. The horizon rate from `eval.py` was last measured on the
+previous grid (39/40) and is not repeated here.
+

@@ -34,7 +34,7 @@ from pathlib import Path
 import numpy as np
 
 from env import CAMERAS, HOME, IMAGE_SIZE
-from tangram import describe_layout, layout
+from tangram import SCENES, describe_layout, layout
 
 
 def episode_files(folder):
@@ -283,7 +283,8 @@ def card(rows, robot, fps, task):
         "| | |",
         "|---|---|",
         f"| Episodes | {episodes} ({solved} solved) |",
-        f"| Distinct scenes | {scenes}; the designed grid holds 72 per figure, so seeds n and n + 72 share a scene |",
+        f"| Distinct scenes | {scenes}; the designed grid holds {SCENES:,} per figure, "
+        f"seed n + {SCENES} repeating seed n |",
         f"| Frames | {frames:,} at {fps} fps, {minutes:.0f} min of manipulation |",
         f"| Figures | {', '.join(figures)} |",
         f"| Robot | {robot}, simulated (MuJoCo) |",

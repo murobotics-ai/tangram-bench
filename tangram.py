@@ -79,14 +79,18 @@ def rotation(yaw):
 # stated exactly and the dev split can ask for rotations never seen in training.
 GOAL_YAWS = 12  # goal silhouette yaw on a 30 degree grid
 SOURCE_YAWS = 8  # packed square yaw on a 45 degree grid
-GOAL_OFFSETS = [(x, y) for x in (-0.015, 0.0, 0.015) for y in (-0.015, 0.0, 0.015)]
+GOAL_OFFSETS = [(x, y) for x in (-0.01, 0.0, 0.01) for y in (-0.01, 0.0, 0.01)]
 SOURCE_OFFSETS = [(x, y) for x in (-0.03, 0.0, 0.03) for y in (-0.03, 0.0, 0.03)]
 SOURCE_CENTER = np.array([0.36, -0.30])
 SPLIT_SIZE = 100000  # seed // SPLIT_SIZE: 0 train, 1 dev, 2 test (benchmark.SPLITS)
+SCENES = GOAL_YAWS * len(GOAL_OFFSETS) * SOURCE_YAWS * len(SOURCE_OFFSETS)  # 7776 combinations
+SCRAMBLE = 1291  # coprime to SCENES: seed n names combination (1291 n) mod 7776, every one
+# once per 7776 seeds, and consecutive seeds change every grid index at once.
 # Workspace: every piece centre, at the source and at the goal, lies between these
 # radii from the robot base. Closer than 0.28 m the elbow folds against its stop and
-# the forearm meets the shoulder column; the centres below keep every designed
-# scene inside (checked by a test over the train and dev grids).
+# the forearm meets the shoulder column; the centres and grids below keep every one
+# of the 7776 designed scenes inside, the rectangle by 5 mm at its worst yaw (checked
+# by a test over the whole train and dev grids).
 WORKSPACE = (0.28, 0.66)
 
 
@@ -106,20 +110,23 @@ def piece_radii(scene, target):
 def layout(seed, target="square"):
     """The scene for a seed: goal and source pose, plus the design indices behind them.
 
-    Within a split, seed n takes goal yaw n mod 12 on the 30 degree grid; the
-    goal offset, source yaw and source offset advance with strides coprime to
-    their grid sizes, so 60 seeds visit every value of each grid. The four
-    indices share the seed counter, so the joint sequence repeats every
-    lcm(12, 9, 8, 9) = 72 seeds: a split holds 72 distinct scenes per figure,
-    and seed n + 72 is the same scene as seed n. The dev split rotates the goal
-    a further 15 degrees, half a grid step: poses between the training
-    rotations, never equal to one.
+    Within a split, seed n names combination m = (1291 n) mod 7776 of the four
+    grids in mixed radix (goal yaw 12, goal offset 9, source yaw 8, source
+    offset 9), so 7776 consecutive seeds are 7776 distinct scenes covering every
+    combination once, any 12 consecutive seeds cover all 12 goal yaws, and seed
+    n + 7776 repeats seed n. The dev split rotates the goal a further 15
+    degrees, half a grid step: poses between the training rotations, never
+    equal to one.
     """
     split, n = divmod(int(seed), SPLIT_SIZE)
-    goal_yaw = 2 * np.pi / GOAL_YAWS * (n % GOAL_YAWS) + (np.pi / GOAL_YAWS if split == 1 else 0)
-    goal_offset = GOAL_OFFSETS[(n * 5) % len(GOAL_OFFSETS)]
-    source_yaw = 2 * np.pi / SOURCE_YAWS * ((n * 3) % SOURCE_YAWS)
-    source_offset = SOURCE_OFFSETS[(n * 7 + 2) % len(SOURCE_OFFSETS)]
+    m = (n * SCRAMBLE) % SCENES
+    m, goal_yaw_index = divmod(m, GOAL_YAWS)
+    m, goal_offset_index = divmod(m, len(GOAL_OFFSETS))
+    source_offset_index, source_yaw_index = divmod(m, SOURCE_YAWS)
+    goal_yaw = 2 * np.pi / GOAL_YAWS * goal_yaw_index + (np.pi / GOAL_YAWS if split == 1 else 0)
+    goal_offset = GOAL_OFFSETS[goal_offset_index]
+    source_yaw = 2 * np.pi / SOURCE_YAWS * source_yaw_index
+    source_offset = SOURCE_OFFSETS[source_offset_index]
     return {
         "goal_center": goal_center(target) + goal_offset,
         "goal_yaw": float(goal_yaw),

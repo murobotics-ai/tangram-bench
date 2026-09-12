@@ -275,7 +275,7 @@ def test_recipe_picks_carries_and_places_a_piece(monkeypatch):
     piece = obs["pieces"][0]
     yaw = float(np.rad2deg(2 * np.arctan2(piece[6], piece[3])))
     kx, ky = float(piece[0]), float(piece[1])
-    tx, ty = kx, ky + 0.25  # Clear of the packed square and of the painted goal.
+    tx, ty = 0.35, 0.0  # Between the packed square and the goal: clear of both.
     hold = {"gripper": 0.0, "note": "n"}
     moves = [
         ("move_to", {"x": kx, "y": ky, "z": 0.15, "yaw": yaw, "gripper": 1.0, "note": "n"}),
