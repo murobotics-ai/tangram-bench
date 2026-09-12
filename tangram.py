@@ -108,9 +108,12 @@ def layout(seed, target="square"):
 
     Within a split, seed n takes goal yaw n mod 12 on the 30 degree grid; the
     goal offset, source yaw and source offset advance with strides coprime to
-    their grid sizes, so 60 seeds visit every value of each grid. The dev split
-    rotates the goal a further 15 degrees, half a grid step: poses between the
-    training rotations, never equal to one.
+    their grid sizes, so 60 seeds visit every value of each grid. The four
+    indices share the seed counter, so the joint sequence repeats every
+    lcm(12, 9, 8, 9) = 72 seeds: a split holds 72 distinct scenes per figure,
+    and seed n + 72 is the same scene as seed n. The dev split rotates the goal
+    a further 15 degrees, half a grid step: poses between the training
+    rotations, never equal to one.
     """
     split, n = divmod(int(seed), SPLIT_SIZE)
     goal_yaw = 2 * np.pi / GOAL_YAWS * (n % GOAL_YAWS) + (np.pi / GOAL_YAWS if split == 1 else 0)

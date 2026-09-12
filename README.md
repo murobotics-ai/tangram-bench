@@ -33,8 +33,10 @@ pending (see [Results](#results)).
 - **Start.** The pieces are packed as a square; its yaw comes from a 45° grid
   and its centre from a 3×3 grid of ±3 cm, both indexed by the seed.
 - **Goal.** A silhouette drawn on the table, yaw on a 30° grid and centre on a
-  3×3 grid of ±1.5 cm, again indexed by the seed, so a dataset's coverage is a
-  statement, not a sample (see the protocol's scene design). Every piece stays
+  3×3 grid of ±1.5 cm, again indexed by the seed: 72 distinct scenes per
+  figure and split, seeds 0–71, after which the sequence repeats, so a
+  dataset's coverage is a statement, not a sample (see the protocol's scene
+  design). Every piece stays
   between 0.28 and 0.66 m from the base, the arm's comfortable field: square,
   rectangle or the classic tangram house (body, roof, chimney) for training, and
   the **cat**, which no policy trains on. The policy also gets a text prompt.

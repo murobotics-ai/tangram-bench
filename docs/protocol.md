@@ -61,7 +61,13 @@ Closer than 0.28 m the elbow folds against its stop and the forearm meets the
 shoulder column, which is where the reference controller used to fail.
 
 The strides are coprime to the grid sizes, so 60 consecutive seeds visit every
-value of every grid. Each recorded episode and evaluation row stores the scene
+value of every grid. The four indices advance on the same seed counter, so
+the joint sequence has period lcm(12, 9, 8, 9) = 72: each split holds 72
+distinct scenes per figure, seeds 0–71 cover them all, and seed n + 72 is
+the same scene as seed n (an episode there differs only through the
+demonstrator's own randomness, if any). More than 72 seeds per figure
+therefore repeat scenes; the seed-to-scene map stays fixed so results remain
+comparable. Each recorded episode and evaluation row stores the scene
 in degrees and millimetres (`goal_yaw_deg`, `goal_center_mm`,
 `source_yaw_deg`, `source_center_mm`). `tools.collect --goal-yaw` and
 `--source-yaw` force a value for every seed, recorded the same way, for

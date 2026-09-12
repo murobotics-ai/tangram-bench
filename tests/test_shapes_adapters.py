@@ -271,6 +271,10 @@ def test_scene_design_is_a_documented_grid_indexed_by_seed():
     assert dev == {15.0 + 30.0 * k for k in range(12)}
     assert describe_layout(layout(SPLITS["test"] + 3, "cat"))["goal_yaw_deg"] == 90.0
     assert layout(7, "square")["goal_yaw"] == layout(7, "square")["goal_yaw"]  # deterministic
+    # The joint sequence has period 72: 72 distinct scenes, then seed 72 repeats seed 0.
+    key = lambda s: json.dumps(s, sort_keys=True)  # noqa: E731
+    scenes = [key(describe_layout(layout(n, "house"))) for n in range(72)]
+    assert len(set(scenes)) == 72 and key(describe_layout(layout(72, "house"))) == scenes[0]
     assert np.allclose(
         layout(7, "square")["goal_center"] - layout(7, "house")["goal_center"], [0, -0.03]
     )

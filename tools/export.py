@@ -34,6 +34,7 @@ from pathlib import Path
 import numpy as np
 
 from env import CAMERAS, HOME, IMAGE_SIZE
+from tangram import describe_layout, layout
 
 
 def episode_files(folder):
@@ -265,6 +266,15 @@ def card(rows, robot, fps, task):
     episodes, solved = len(rows), sum(r["success"] for r in rows)
     frames = sum(r["frames"] for r in rows)
     minutes = frames / fps / 60
+    scenes = len(
+        {
+            (
+                r["target"],
+                json.dumps(describe_layout(layout(r["seed"], r["target"])), sort_keys=True),
+            )
+            for r in rows
+        }
+    )
     lines = [
         f"Demonstrations for [Tangram-Bench]({GITHUB}): a {robot.capitalize()} arm in MuJoCo "
         "assembles a tangram silhouette from a packed square of seven pieces, given the "
@@ -273,6 +283,7 @@ def card(rows, robot, fps, task):
         "| | |",
         "|---|---|",
         f"| Episodes | {episodes} ({solved} solved) |",
+        f"| Distinct scenes | {scenes}; the designed grid holds 72 per figure, so seeds n and n + 72 share a scene |",
         f"| Frames | {frames:,} at {fps} fps, {minutes:.0f} min of manipulation |",
         f"| Figures | {', '.join(figures)} |",
         f"| Robot | {robot}, simulated (MuJoCo) |",
