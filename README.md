@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/preview.png" alt="Packed tangram square, a Franka Panda and the target shadow on the table" width="760">
+  <img src="assets/preview.png" alt="Ten simulated Franka Panda arms collecting tangram demonstrations at once, each table with its packed pieces and target silhouette, the plan step and subtask of every arm in the overlay" width="760">
 </p>
 
 <h1 align="center">Tangram-Bench</h1>
@@ -399,6 +399,7 @@ tools/train.py          lerobot-train with the laptop defaults and the repo path
 tools/results.py        verify and compare results offline
 tools/history.py        local history page
 tools/report.py         demonstration folders -> success, stillness and smoothness metrics
+tools/hero.py           the README picture: ten arms collecting, the fleet view
 examples/oracle.py      reference controller (630)
 examples/lerobot_policy.py  LeRobot checkpoint as a pixel policy
 examples/systems/       system files: hold, http, openai, anthropic, agent-openai, agent-anthropic, lerobot
