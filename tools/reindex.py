@@ -27,9 +27,6 @@ import re
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 
 from tools.export import INDEX_FEATURE, VOCABULARIES, Vocabulary, plan_text
 
@@ -91,6 +88,9 @@ def index_arrays(episodes, vocabularies):
 
 
 def reindex(root):
+    import pandas as pd
+    import pyarrow as pa
+    import pyarrow.parquet as pq
     from lerobot.datasets.compute_stats import aggregate_stats, compute_episode_stats
     from lerobot.datasets.feature_utils import get_hf_features_from_features
     from lerobot.datasets.io_utils import (

@@ -33,7 +33,6 @@ import shutil
 from pathlib import Path
 
 import numpy as np
-import pandas as pd
 
 from env import CAMERAS, HOME, IMAGE_SIZE
 from tangram import SCENES, describe_layout, layout
@@ -129,6 +128,8 @@ class Vocabulary:
         return self.index.setdefault(text, len(self.index))
 
     def frame(self):
+        import pandas as pd
+
         return pd.DataFrame(
             {f"{self.name}_index": list(self.index.values())},
             index=pd.Index(list(self.index), name=self.name),

@@ -6,8 +6,6 @@ import re
 from datetime import datetime
 
 import numpy as np
-import pandas as pd
-import pyarrow.parquet as pq
 import pytest
 
 from benchmark import COMPARISON_FIELDS, digest
@@ -122,6 +120,8 @@ def test_directory_digest_tracks_every_file(tmp_path):
 
 @pytest.mark.skipif(not HAS_LEROBOT, reason="uv sync --extra lerobot")
 def test_export_and_lerobot_policy_round_trip(tmp_path, monkeypatch):
+    import pandas as pd
+
     from tools.export import export
 
     collect(
@@ -260,7 +260,10 @@ def test_relabel_maps_legacy_motion_sentences_to_plan_lines():
     ]
 
 
+@pytest.mark.skipif(not HAS_LEROBOT, reason="uv sync --extra lerobot")
 def test_vocabulary_and_plan_text_follow_the_tasks_parquet_layout(tmp_path):
+    import pandas as pd
+
     from tools.export import NONE, Vocabulary, plan_text
 
     words = Vocabulary("subtask")
@@ -274,6 +277,9 @@ def test_vocabulary_and_plan_text_follow_the_tasks_parquet_layout(tmp_path):
 
 @pytest.mark.skipif(not HAS_LEROBOT, reason="uv sync --extra lerobot")
 def test_reindex_rebuilds_the_index_format_from_the_sidecar(tmp_path):
+    import pandas as pd
+    import pyarrow.parquet as pq
+
     from tools.export import export
     from tools.reindex import annotations, reindex
 
