@@ -112,22 +112,33 @@ Policies may ignore it. Remote adapters can declare `use_prompt: false`.
 
 Demonstrators may expose language annotations: `policy.plan`, a numbered list
 of steps for the episode (one sentence per piece, e.g. `Place the orange large
-triangle at the right of the house.`); `policy.step`, the 1-based step in
-progress; and `policy.subtask`, a finer sentence for the current motion
-(`Carry the orange large triangle to the right of the house and align it.`).
+triangle at the right of the outline.`, the place named in the outline's own
+frame so the same vocabulary, 7 pieces by 9 places, covers any silhouette);
+`policy.step`, the 1-based step in progress; and `policy.subtask`, the plan
+step in progress or a recovery sentence while a slipped or badly held piece is
+let go and picked up again (`The blue square slipped; let go, back away and
+pick it up again.`). The finer motions (reach, lift, carry, lower, release) are
+not verbalised: a human decides which piece goes where and the rest is motor.
 Evaluation trajectories and recorded demonstrations store `plan` per episode
 and `step` and `subtask` per step or frame; the viewer shows the current one
 under the prompt as `SUBTASK 3/7: ...` while replaying. None of it is given to
 a policy at evaluation.
 
-`tools/export.py` writes them the way `lerobot-annotate` does (LeRobot 0.6.1,
-`lerobot.datasets.language`): a `language_persistent` column of rows
-`{role, content, style, timestamp, camera, tool_calls}` with `subtask` rows at
-every change and `plan` rows at every step boundary holding the numbered list
-of steps still to do, an empty `language_events` column, and both declared in
-`meta/info.json`. The LeRobot task string stays the figure prompt so training
-and evaluation see the same language; `--task subtask` appends the annotation
-for subtask-conditioned training.
+`tools/export.py` writes them in LeRobot's subtask layout
+(`docs/lerobot/dataset_subtask`), each level stored exactly like the task:
+a table under `meta/` mapping text to index and one integer per frame.
+`subtask_index` points into `meta/subtasks.parquet` (index column `subtask`,
+the plan line in progress or a recovery sentence) and `plan_index` into
+`meta/plans.parquet` (index column `plan`, the numbered plan of the episode as
+one string, `1. ...\n2. ...`, constant over the episode). Both columns are
+declared in `meta/info.json` as `int64` of shape `[1]` with stats, and a frame
+without an annotation carries -1. Read with LeRobot 0.6.1, `dataset[i]` returns
+the indices as tensors and the tables load with `pandas.read_parquet`. The
+LeRobot task string stays the figure prompt so training and evaluation see the
+same language; `--task subtask` appends the annotation for subtask-conditioned
+training. This gives the hierarchy `task -> plan -> subtask -> action`, so a
+high-level planner can be trained on `(task, plan) -> subtask` and a policy on
+`(subtask, state, cameras) -> action`.
 
 Observations contain independent copies:
 

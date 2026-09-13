@@ -418,3 +418,35 @@ four failures (square 5 and 27, rectangle 87, cat 13) are slip cascades that
 ran out of time. The horizon rate from `eval.py` was last measured on the
 previous grid (39/40) and is not repeated here.
 
+
+### Annotation layout: subtask and plan indices (2026-09-12)
+
+The exported datasets carried the plan and subtask annotations in LeRobot
+0.6.1's `language_persistent` column, the whole row list of the episode
+repeated on every frame, which a collaborator flagged as opaque for a
+planner/policy split. The exporter now follows LeRobot's subtask convention:
+each level is stored like the task, a text-to-index table under `meta/` and one
+integer per frame. `subtask_index` points into `meta/subtasks.parquet` (the
+motion in progress) and `plan_index` into `meta/plans.parquet` (the numbered
+plan of the episode, constant over it), -1 where absent; the language columns
+are gone. `tools/reindex.py` rewrote
+`tangram-square-rectangle-house-panda-300ep` in place from its
+`episodes.jsonl` (videos untouched; the rewritten parquets are byte-identical
+to a fresh export, as the test checks). The 80ep and 330ep sets on the Hub
+keep the old columns.
+
+The first conversion kept the oracle's fine sentences, one per motion (reach,
+lift, carry, lower, release) with the figure's name in it: 86 distinct
+subtasks over 300 episodes, a combinatorial vocabulary rather than 86 skills.
+Asked what a human would need, the answer is one decision per piece, which
+piece and where, plus recovering from a slip; the motions between are not
+verbalised. The oracle now emits the plan line itself as the subtask while a
+piece is being placed, `Place the <piece> at the <place> of the outline.`,
+with the place named in the outline's own frame so the same words cover any
+silhouette, and keeps the recovery sentences and the closing one.
+`tools/reindex.py --relabel` mapped the old sentences to the new ones from
+the sidecar and the set was re-pushed: 33 distinct subtasks (24 placements
+of the 63 possible, 7 pieces by 9 places; 8 recoveries; 1 closing), 8 plans,
+a median of 8 subtask segments per episode. The subtask is now exactly the
+plan step in progress, so a high-level planner that emits the plan and a
+policy conditioned on the current line share one vocabulary.

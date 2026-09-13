@@ -138,7 +138,10 @@ class Policy:
         self.high = HEIGHTS[0]
         self.last_action = None
         # Language annotations for demonstrations: a numbered plan (one step per
-        # piece), the 1-based step in progress and the fine-grained subtask sentence.
+        # piece), the 1-based step in progress and the subtask sentence, which is the
+        # plan step itself while the piece is being placed (a human decides which
+        # piece goes where; the motions in between are not verbalised), or a
+        # recovery sentence while a slipped or badly held piece is being let go.
         self.plan, self.step = [], 0
         self.subtask = "Look at the silhouette on the table and plan the assembly."
         self.retries = 0  # Re-grasp attempts for the current piece.
@@ -305,25 +308,22 @@ class Policy:
         self.regrasp, self.descents, self.abandon = False, 0, False
         self.transition("start", obs)
 
+    def placement(self, piece, obs):
+        """The plan sentence for one piece: where it goes, named in the outline's own
+        frame so the same words apply to any silhouette."""
+        where = region(self.targets[piece][:2], obs["goal"], self.yaw)
+        return f"Place the {NAMES[piece]} at the {where} of the outline."
+
     def describe(self, obs):
         """One sentence saying what the controller is doing now, for language annotations."""
         if self.phase == "done":
             return "All seven pieces are placed; hold still."
-        name, figure = NAMES[self.piece], obs["target"]
-        where = region(self.targets[self.piece][:2], obs["goal"], self.yaw)
+        name = NAMES[self.piece]
         if self.phase == "abort":
             return f"The {name} is not held well; lower it to the table and let go."
         if self.regrasp and self.phase in ("release", "retreat"):
             return f"The {name} slipped; let go, back away and pick it up again."
-        if self.phase in ("approach", "descend", "close"):
-            return f"Reach for the {name} and grasp its knob from above."
-        if self.phase == "lift":
-            return f"Lift the {name} off the table."
-        if self.phase in ("transit", "transfer", "hover"):
-            return f"Carry the {name} to the {where} of the {figure} and align it."
-        if self.phase == "lower":
-            return f"Lower the {name} into place at the {where} of the {figure}."
-        return f"Release the {name} and back away."
+        return self.placement(self.piece, obs)
 
     def transition(self, phase, obs):
         # Keep the integrated servo bias through release and the hover/lower pair,
@@ -369,11 +369,7 @@ class Policy:
             scene = goal_pose(obs["goal"], obs["target"])
             self.targets = solution(obs["target"], self.seed, scene)
             self.yaw = scene["goal_yaw"]
-            self.plan = [
-                f"Place the {NAMES[i]} at the {region(self.targets[i][:2], obs['goal'], self.yaw)} "
-                f"of the {obs['target']}."
-                for i in self.order
-            ]
+            self.plan = [self.placement(i, obs) for i in self.order]
         self.data.qpos[:9] = obs["qpos"]
         mujoco.mj_forward(self.model, self.data)
         if self.control is None:

@@ -6,6 +6,8 @@ import re
 from datetime import datetime
 
 import numpy as np
+import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 
 from benchmark import COMPARISON_FIELDS, digest
@@ -167,8 +169,12 @@ def test_export_and_lerobot_policy_round_trip(tmp_path, monkeypatch):
     assert rows[0]["frames"] == 2 and info["fps"] == 10
     assert rows[0]["subtasks"] == [{"frame": 0, "text": ""}] and rows[0]["plan"] == []
     assert rows[0]["prompt"] == "Solve the tangram puzzle to assemble the house."
-    assert set(info["features"]) >= {"language_persistent", "language_events"}
+    assert set(info["features"]) >= {"subtask_index", "plan_index", "task_index"}
+    assert not {"language_persistent", "language_events"} & set(info["features"])
     assert set(info["features"]) >= {"observation.images.top", "observation.state", "action"}
+    assert info["features"]["subtask_index"] == {"dtype": "int64", "shape": [1], "names": None}
+    assert list(pd.read_parquet(tmp_path / "lerobot" / "meta" / "subtasks.parquet").index) == []
+    assert list(pd.read_parquet(tmp_path / "lerobot" / "meta" / "plans.parquet").index) == []
 
     from lerobot.configs.types import FeatureType, PolicyFeature
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
@@ -179,7 +185,11 @@ def test_export_and_lerobot_policy_round_trip(tmp_path, monkeypatch):
     from examples.lerobot_policy import Policy
 
     dataset = LeRobotDataset("test/tangram", root=tmp_path / "lerobot")
-    assert dataset.meta.has_language_columns and dataset[0]["language_persistent"] == []
+    assert not dataset.meta.has_language_columns
+    assert dataset[0]["subtask_index"].item() == -1 and dataset[0]["plan_index"].item() == -1
+    assert "subtask_index" in dataset.meta.stats and dataset.meta.stats["subtask_index"]["max"] == [
+        -1
+    ]
     config = ACTConfig(
         input_features={
             f"observation.images.{name}": PolicyFeature(FeatureType.VISUAL, (3, *IMAGE_SIZE))
@@ -211,26 +221,94 @@ def test_export_and_lerobot_policy_round_trip(tmp_path, monkeypatch):
     env.close()
 
 
-def test_language_rows_follow_lerobot_annotate_conventions():
-    from tools.export import language_rows
+def test_relabel_maps_legacy_motion_sentences_to_plan_lines():
+    from tools.reindex import relabel
 
-    data = {
-        "fps": 10,
-        "subtask": np.array(["reach", "reach", "carry", "carry", "reach", "carry"]),
-        "step": np.array([1, 1, 1, 1, 2, 2]),
-        "plan": np.array(["Place A.", "Place B."]),
+    row = {
+        "plan": [
+            "Place the blue square at the top of the house.",
+            "Place the red medium triangle at the left of the house.",
+        ],
+        "subtasks": [
+            {"frame": 0, "text": "Reach for the blue square and grasp its knob from above."},
+            {"frame": 5, "text": "Lift the blue square off the table."},
+            {"frame": 9, "text": "Carry the blue square to the top of the house and align it."},
+            {
+                "frame": 20,
+                "text": "The blue square slipped; let go, back away and pick it up again.",
+            },
+            {"frame": 30, "text": "Lower the blue square into place at the top of the house."},
+            {"frame": 40, "text": "Release the blue square and back away."},
+            {
+                "frame": 50,
+                "text": "Reach for the red medium triangle and grasp its knob from above.",
+            },
+            {"frame": 90, "text": "All seven pieces are placed; hold still."},
+        ],
     }
-    rows = language_rows(data)
-    assert [(r["style"], r["timestamp"]) for r in rows] == [
-        ("plan", 0.0),
-        ("subtask", 0.0),
-        ("subtask", 0.2),
-        ("plan", 0.4),
-        ("subtask", 0.4),
-        ("subtask", 0.5),
+    out = relabel(row)
+    assert out["plan"] == [
+        "Place the blue square at the top of the outline.",
+        "Place the red medium triangle at the left of the outline.",
     ]
-    assert rows[0]["content"] == "1. Place A.\n2. Place B." and rows[3]["content"] == "1. Place B."
-    assert all(r["role"] == "assistant" and r["camera"] is None for r in rows)
+    assert out["subtasks"] == [
+        {"frame": 0, "text": "Place the blue square at the top of the outline."},
+        {"frame": 20, "text": "The blue square slipped; let go, back away and pick it up again."},
+        {"frame": 30, "text": "Place the blue square at the top of the outline."},
+        {"frame": 50, "text": "Place the red medium triangle at the left of the outline."},
+        {"frame": 90, "text": "All seven pieces are placed; hold still."},
+    ]
+
+
+def test_vocabulary_and_plan_text_follow_the_tasks_parquet_layout(tmp_path):
+    from tools.export import NONE, Vocabulary, plan_text
+
+    words = Vocabulary("subtask")
+    assert [words(t) for t in ["reach", "reach", "carry", "", "reach"]] == [0, 0, 1, NONE, 0]
+    words.write(tmp_path)
+    frame = pd.read_parquet(tmp_path / "meta" / "subtasks.parquet")
+    assert frame.index.name == "subtask" and list(frame.index) == ["reach", "carry"]
+    assert frame["subtask_index"].tolist() == [0, 1]
+    assert plan_text(["Place A.", "Place B."]) == "1. Place A.\n2. Place B." and plan_text([]) == ""
+
+
+@pytest.mark.skipif(not HAS_LEROBOT, reason="uv sync --extra lerobot")
+def test_reindex_rebuilds_the_index_format_from_the_sidecar(tmp_path):
+    from tools.export import export
+    from tools.reindex import annotations, reindex
+
+    collect(
+        [
+            "--target",
+            "house",
+            "--episodes",
+            "2",
+            "--steps",
+            "10",
+            "--fps",
+            "10",
+            "--policy",
+            "examples/oracle.py",
+            "--keep-failures",
+            "--out",
+            str(tmp_path / "raw"),
+        ]
+    )
+    rows = export([tmp_path / "raw"], tmp_path / "lerobot", "test/tangram", include_failures=True)
+    assert rows[0]["plan"] and rows[0]["subtasks"][0]["text"] == rows[0]["plan"][0]
+    root = tmp_path / "lerobot"
+    before = {p.relative_to(root): pq.read_table(p) for p in root.rglob("*.parquet")}
+    plan, subtasks = annotations(root)[0]
+    assert plan.startswith("1. ") and len(subtasks) == rows[0]["frames"]
+    assert reindex(root) == {"subtask": 2, "plan": 2}  # first plan line per scene
+    for p in root.rglob("*.parquet"):
+        assert pq.read_table(p).equals(before[p.relative_to(root)]), p
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    dataset = LeRobotDataset("test/tangram", root=root)
+    sample = dataset[0]
+    assert sample["subtask_index"].item() == 0 and sample["plan_index"].item() == 0
+    assert pd.read_parquet(root / "meta" / "subtasks.parquet").index[0] == subtasks[0]
 
 
 def test_train_command_uses_repo_paths_and_passes_extra_flags(tmp_path, monkeypatch, capsys):

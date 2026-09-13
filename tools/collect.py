@@ -8,7 +8,7 @@ Each episode is a compressed npz holding top/wrist images, arm state, the
 commanded action, piece poses, the goal and language annotations at `fps`
 frames per second: the figure's task prompt, the demonstrator's numbered
 `plan` (one sentence per step), and per frame the 1-based `step` in progress
-and the fine-grained `subtask` sentence, read from `policy.plan`,
+and the `subtask` sentence (the plan step in progress or a recovery), read from `policy.plan`,
 `policy.step` and `policy.subtask` when the demonstrator exposes them. Frames
 are taken every 50/fps control ticks; the stored action is the last command of
 that interval. A learned policy that emits one action per frame and holds it for

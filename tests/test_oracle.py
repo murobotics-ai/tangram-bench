@@ -39,9 +39,10 @@ def test_oracle_lifts_and_carries_the_first_piece_through_contact():
         obs = env.step([policy.act(obs)])[0]
         lifted |= obs["pieces"][policy.order[0], 2] > 0.05
     assert lifted, "first piece never left the table"
-    assert "orange large triangle" in policy.subtask and "house" in policy.subtask
+    assert "orange large triangle" in policy.subtask and "of the outline." in policy.subtask
     assert len(policy.plan) == 7 and policy.step == 1
     assert policy.plan[0].startswith("Place the orange large triangle at the")
+    assert policy.subtask == policy.plan[0]  # the subtask is the plan step in progress
     assert policy.phase in ("transit", "transfer", "hover", "lower", "release", "retreat")
     assert np.linalg.norm(obs["pieces"][policy.order[0], :2] - start[:2]) > 0.05
     assert policy.high in (0.22, 0.14)

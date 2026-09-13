@@ -16,13 +16,14 @@ describes the benchmark and the episodes, after `hf auth login`.
 Features: observation.images.top and .wrist (video), observation.state (arm
 joints and two finger joints) and action (arm joint targets and gripper opening),
 all at the recording fps. The figure prompt is the LeRobot task string
-(`--task subtask` appends the per-frame annotation instead). Language
-annotations are written the way `lerobot-annotate` writes them: the
-`language_persistent` column carries `subtask` rows (one per change, stamped
-at its start) and `plan` rows (the numbered list of steps still to do, refreshed
-at every step boundary), `language_events` stays empty, and both are declared
-in meta/info.json. A sidecar episodes.jsonl records seed, silhouette, success,
-prompt, plan and the subtask segments per episode index.
+(`--task subtask` appends the per-frame annotation instead). The language
+annotations follow LeRobot's subtask convention, each level in its own table
+under meta/ and every frame carrying only an index into it, exactly like
+`task_index` and meta/tasks.parquet: `subtask_index` -> meta/subtasks.parquet
+(the plan line in progress, one per piece, or a recovery sentence) and
+`plan_index` -> meta/plans.parquet (the demonstrator's numbered plan for the
+episode, the planner's trace). A frame without an annotation carries -1. A sidecar episodes.jsonl records seed,
+silhouette, success, prompt, plan and the subtask segments per episode index.
 Requires the `lerobot` extra: uv sync --extra lerobot
 """
 
@@ -32,6 +33,7 @@ import shutil
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from env import CAMERAS, HOME, IMAGE_SIZE
 from tangram import SCENES, describe_layout, layout
@@ -103,7 +105,44 @@ def features(robot, narm):
             "names": [*joints, "finger0", "finger1"],
         },
         "action": {"dtype": "float32", "shape": (narm + 1,), "names": [*joints, "gripper"]},
+        **{f"{name}_index": INDEX_FEATURE for name in VOCABULARIES},
     }
+
+
+VOCABULARIES = ("subtask", "plan")  # frame column `<name>_index`, table meta/<name>s.parquet
+INDEX_FEATURE = {"dtype": "int64", "shape": (1,), "names": None}
+NONE = -1  # index of a frame without an annotation
+
+
+class Vocabulary:
+    """Text -> index map stored the way LeRobot stores tasks: `meta/<name>s.parquet`
+    with the text as the index column `<name>` and one column `<name>_index`."""
+
+    def __init__(self, name):
+        self.name = name
+        self.index = {}
+
+    def __call__(self, text):
+        """Index of `text`, registering it on first sight; NONE for an empty text."""
+        if not text:
+            return NONE
+        return self.index.setdefault(text, len(self.index))
+
+    def frame(self):
+        return pd.DataFrame(
+            {f"{self.name}_index": list(self.index.values())},
+            index=pd.Index(list(self.index), name=self.name),
+        )
+
+    def write(self, root):
+        path = Path(root) / "meta" / f"{self.name}s.parquet"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.frame().to_parquet(path)
+
+
+def plan_text(plan):
+    """The numbered plan as one string: `1. ...\n2. ...`; empty for no plan."""
+    return "\n".join(f"{k}. {line}" for k, line in enumerate(plan, 1))
 
 
 def segments(subtasks):
@@ -116,75 +155,6 @@ def segments(subtasks):
     return out
 
 
-def language_rows(data):
-    """LeRobot v3.1 persistent language rows for one episode: `subtask` rows at every
-    change of the per-frame annotation and, following lerobot-annotate, a `plan` row at
-    every step boundary listing the steps still to do as a numbered list."""
-    fps = int(data["fps"])
-    subtasks = [str(t) for t in data["subtask"]] if "subtask" in data else []
-    steps = [int(t) for t in data["step"]] if "step" in data else []
-    plan = [str(t) for t in data["plan"]] if "plan" in data else []
-    rows = []
-    for segment in segments(subtasks):
-        if segment["text"]:
-            rows.append(
-                {
-                    "role": "assistant",
-                    "content": segment["text"],
-                    "style": "subtask",
-                    "timestamp": segment["frame"] / fps,
-                    "camera": None,
-                    "tool_calls": None,
-                }
-            )
-    last = None
-    for frame, step in enumerate(steps):
-        if step and step != last and plan:
-            remaining = plan[step - 1 :]
-            rows.append(
-                {
-                    "role": "assistant",
-                    "content": "\n".join(f"{k}. {line}" for k, line in enumerate(remaining, 1)),
-                    "style": "plan",
-                    "timestamp": frame / fps,
-                    "camera": None,
-                    "tool_calls": None,
-                }
-            )
-            last = step
-    return sorted(rows, key=lambda r: (r["timestamp"], r["style"]))
-
-
-def annotate(out, rows_by_episode):
-    """Add the two LeRobot language columns to every data shard and declare them in info."""
-    import pyarrow as pa
-    import pyarrow.parquet as pq
-    from lerobot.datasets.io_utils import (
-        load_info,
-        write_info,
-        write_table_one_row_group_per_episode,
-    )
-    from lerobot.datasets.language import (
-        LANGUAGE_EVENTS,
-        LANGUAGE_PERSISTENT,
-        language_feature_info,
-    )
-
-    for path in sorted((Path(out) / "data").glob("chunk-*/file-*.parquet")):
-        table = pq.read_table(path)
-        episodes = table.column("episode_index").to_pylist()
-        # Like lerobot-annotate's writer, let pyarrow infer the struct type: the canonical
-        # type's JSON extension for tool_calls cannot be built from Python lists.
-        persistent = pa.array([rows_by_episode.get(e, []) for e in episodes])
-        events = pa.array([[] for _ in episodes])
-        table = table.append_column(LANGUAGE_PERSISTENT, persistent)
-        table = table.append_column(LANGUAGE_EVENTS, events)
-        write_table_one_row_group_per_episode(table, path)
-    info = load_info(Path(out))
-    info.features = {**info.features, **language_feature_info()}
-    write_info(info, Path(out))
-
-
 def export(folders, out, repo_id, include_failures=False, overwrite=False, task="prompt"):
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
@@ -194,7 +164,7 @@ def export(folders, out, repo_id, include_failures=False, overwrite=False, task=
             raise FileExistsError(f"{out} exists; pass --overwrite to replace it")
         shutil.rmtree(out)
     dataset, rows, fps, robot = None, [], None, None
-    language = {}
+    vocabularies = {name: Vocabulary(name) for name in VOCABULARIES}
     for path, data in episodes(folders, include_failures):
         if dataset is None:
             fps, robot = int(data["fps"]), str(data["robot"])
@@ -211,6 +181,8 @@ def export(folders, out, repo_id, include_failures=False, overwrite=False, task=
         if int(data["fps"]) != fps or str(data["robot"]) != robot:
             raise ValueError(f"{path}: mixed fps or robot within one dataset")
         subtasks = data["subtask"] if "subtask" in data else [""] * len(data["time"])
+        plan = [str(t) for t in data["plan"]] if "plan" in data else []
+        plan_index = vocabularies["plan"](plan_text(plan))
         for t in range(len(data["time"])):
             text = str(data["prompt"])
             if task == "subtask" and str(subtasks[t]):
@@ -221,10 +193,11 @@ def export(folders, out, repo_id, include_failures=False, overwrite=False, task=
                     "observation.state": data["state"][t],
                     "action": data["action"][t],
                     "task": text,
+                    "subtask_index": np.array([vocabularies["subtask"](str(subtasks[t]))]),
+                    "plan_index": np.array([plan_index]),
                 }
             )
         dataset.save_episode()
-        language[len(rows)] = language_rows(data)
         rows.append(
             {
                 "episode_index": len(rows),
@@ -234,14 +207,15 @@ def export(folders, out, repo_id, include_failures=False, overwrite=False, task=
                 "success": bool(data["success"]),
                 "frames": int(len(data["time"])),
                 "prompt": str(data["prompt"]),
-                "plan": [str(t) for t in data["plan"]] if "plan" in data else [],
+                "plan": plan,
                 "subtasks": segments(subtasks),
             }
         )
     if dataset is None:
         raise ValueError("No episodes found; record some with tools/collect.py")
     dataset.finalize()
-    annotate(out, language)
+    for vocabulary in vocabularies.values():
+        vocabulary.write(out)
     with (out / "episodes.jsonl").open("w") as f:
         for row in rows:
             f.write(json.dumps(row) + "\n")
@@ -315,9 +289,17 @@ def card(rows, robot, fps, task):
         "",
         "### Language annotations",
         "",
-        "`language_persistent` carries the demonstrator's numbered plan (refreshed at every "
-        "step) and the subtask sentence in progress, in the layout `lerobot-annotate` "
-        "writes; `language_events` is empty.",
+        "Two levels below the task, each stored like the task itself, a table under `meta/` "
+        "and an index per frame. `plan_index` points into `meta/plans.parquet`, the "
+        "demonstrator's numbered plan for the episode, one line per piece "
+        "(`Place the orange large triangle at the top of the outline.`), constant over "
+        "the episode. `subtask_index` points into `meta/subtasks.parquet`: the plan line "
+        "in progress while a piece is being placed, or a recovery sentence while a slipped "
+        "or badly held piece is let go and picked up again, or the closing sentence once "
+        "all seven are placed. Places are named in the outline's own frame (top, "
+        "bottom-left, center, ...), so the same vocabulary, 7 pieces by 9 places plus 7 "
+        "recoveries, describes any silhouette. Together they give "
+        "`task -> plan -> subtask -> action`; a frame without an annotation carries -1.",
         "",
     ]
     return "\n".join(lines)

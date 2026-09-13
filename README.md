@@ -46,10 +46,12 @@ pending (see [Results](#results)).
 - **Language.** The prompt names the figure: *Solve the tangram puzzle to
   assemble the house.* Demonstrations also carry a numbered plan, one step per
   piece, and a per-frame subtask sentence, the kind of label many VLAs train
-  on: *SUBTASK 3/7: Carry the orange large triangle to the right of the house
-  and align it.* Exported datasets store them in LeRobot's own language
-  columns. Policies never see them at evaluation; the replay viewer shows the
-  label changing over time.
+  on: *SUBTASK 3/7: Place the orange large triangle at the right of the
+  outline.* The subtask is the plan step in progress, or a recovery sentence
+  while a slipped piece is picked up again; places are named in the outline's
+  own frame, so the same words describe any silhouette. Exported datasets
+  store them as LeRobot subtask and plan indices. Policies never see them at
+  evaluation; the replay viewer shows the label changing over time.
 - **Action.** Absolute joint targets in radians plus gripper opening in [0, 1],
   at 50 Hz, one action or a chunk per call.
 - **Success.** Silhouette IoU ≥ 0.87, footprint overlap ≤ 6%, every piece at
@@ -194,10 +196,14 @@ saved, and the overlay shows `SOLVED` once the assembly has held.
 `observation.images.top`, `observation.images.wrist` (video),
 `observation.state` (9: arm joints and fingers), `action` (8: joint targets and
 gripper), the figure prompt as task (`--task subtask` appends the annotation
-for subtask-conditioned training), the plan and subtask annotations in
-LeRobot's `language_persistent` column exactly as `lerobot-annotate` writes
-them, and an `episodes.jsonl` sidecar with seed, silhouette, success, prompt,
-plan and the annotation segments per episode. Needs the `lerobot` extra:
+for subtask-conditioned training), the annotations in LeRobot's subtask
+layout, one table per level under `meta/` and an index per frame like
+`task_index`: `subtask_index` into `meta/subtasks.parquet` (the plan step in
+progress, or a recovery) and `plan_index` into `meta/plans.parquet` (the numbered plan of the
+episode), -1 where there is none; and an `episodes.jsonl` sidecar with seed,
+silhouette, success, prompt, plan and the annotation segments per episode.
+`tools/reindex.py` rewrites a dataset exported before this layout in place
+from that sidecar. Needs the `lerobot` extra:
 `uv sync --extra dev --extra lerobot`. Frames stream straight into LeRobot's
 encoder threads (no PNG round trip), about 7 s per 200 s episode; the
 dataset itself is LeRobot's own format and encoder (AV1, keyframe every two
@@ -388,6 +394,7 @@ replay.py               episode reconstruction (120)
 tools/prepare.py        robot assets at a pinned revision
 tools/collect.py        record demonstrations for one silhouette
 tools/export.py         episodes -> LeRobot v3 dataset
+tools/reindex.py        rewrite an exported dataset's annotations in place
 tools/train.py          lerobot-train with the laptop defaults and the repo paths
 tools/results.py        verify and compare results offline
 tools/history.py        local history page
